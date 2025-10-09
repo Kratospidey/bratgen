@@ -1,0 +1,24 @@
+{
+  "name": "@bratgen/analysis",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "module": "src/index.ts",
+  "sideEffects": false,
+  "files": ["src", "tests"],
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format esm,cjs",
+    "dev": "tsup src/index.ts --watch",
+    "test": "vitest run",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "zod": "3.22.4"
+  },
+  "devDependencies": {
+    "tsup": "7.2.0",
+    "typescript": "5.3.3",
+    "vitest": "1.2.2",
+    "eslint": "8.56.0"
+  }
+}

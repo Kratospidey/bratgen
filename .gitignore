@@ -1,0 +1,9 @@
+node_modules
+pnpm-lock.yaml
+.DS_Store
+apps/web/.next
+apps/web/out
+**/dist
+.env
+.env.local
+storage
