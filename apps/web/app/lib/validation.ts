@@ -21,3 +21,25 @@ export const uploadSchema = z.object({
 });
 
 export type UploadFormInput = z.infer<typeof uploadSchema>;
+
+export const renderRequestSchema = z.object({
+  uploadId: z.string().uuid(),
+  segment: z
+    .object({
+      start: z.number().min(0),
+      end: z.number().positive()
+    })
+    .refine((value) => value.end > value.start, {
+      message: "segment duration must be positive",
+      path: ["end"]
+    }),
+  options: z.object({
+    resolution: z.enum(["720p", "1080p"]),
+    aspect: z.enum(["9:16", "1:1", "16:9"]),
+    includeMusic: z.boolean(),
+    includeOriginal: z.boolean(),
+    musicGainDb: z.number().min(-24).max(12).optional()
+  })
+});
+
+export type RenderRequestInput = z.infer<typeof renderRequestSchema>;

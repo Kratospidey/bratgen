@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { UploadPane } from "@/components/UploadPane";
 import { SpotifyLinkForm } from "@/components/SpotifyLinkForm";
 import { PlayerCanvas } from "@/components/PlayerCanvas";
@@ -10,9 +10,11 @@ import { AudioControls } from "@/components/AudioControls";
 import { ExportPanel } from "@/components/ExportPanel";
 import { UploadFormInput } from "@/lib/validation";
 import { SegmentSelectionResult, scoreCandidate, selectBestSegment } from "@bratgen/analysis";
-import type { SpotifyMetadataResponse } from "@/lib/api";
+import type { RenderJob, SpotifyMetadataResponse } from "@/lib/api";
 import { Button, Card } from "@bratgen/ui";
 import type { StoredUploadSummary } from "@/lib/uploads";
+import { fetchRenderJob, queueRenderJob } from "@/lib/api";
+import type { ExportOptions } from "@/components/ExportPanel";
 
 export function LandingShell() {
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
@@ -23,6 +25,9 @@ export function LandingShell() {
   const [upload, setUpload] = useState<StoredUploadSummary | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [isQueueingRender, setIsQueueingRender] = useState(false);
 
   const onUpload = async (data: UploadFormInput) => {
     if (!data.video) {
@@ -33,6 +38,8 @@ export function LandingShell() {
     try {
       const url = URL.createObjectURL(data.video);
       setVideoUrl(url);
+      setRenderJob(null);
+      setRenderError(null);
 
       const formData = new FormData();
       formData.append("duration", data.duration.toString());
@@ -80,6 +87,71 @@ export function LandingShell() {
     }
   };
 
+  useEffect(() => {
+    if (!renderJob) {
+      return;
+    }
+    if (renderJob.status === "completed" || renderJob.status === "failed") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const updated = await fetchRenderJob(renderJob.id);
+        if (!cancelled) {
+          setRenderJob(updated);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("failed to poll render job", error);
+        }
+      }
+    };
+
+    const interval = setInterval(poll, 2000);
+    void poll();
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [renderJob]);
+
+  const onExport = async (options: ExportOptions) => {
+    if (!upload) {
+      setRenderError("upload a clip before exporting");
+      return;
+    }
+    if (!segment) {
+      setRenderError("select a song segment before exporting");
+      return;
+    }
+
+    setRenderError(null);
+    setIsQueueingRender(true);
+    try {
+      const job = await queueRenderJob({
+        uploadId: upload.id,
+        segment: { start: segment.start, end: segment.end },
+        options: {
+          resolution: options.resolution,
+          aspect: options.aspect,
+          includeMusic: options.includeMusic,
+          includeOriginal: options.includeOriginal,
+          musicGainDb: 0
+        }
+      });
+      setRenderJob(job);
+    } catch (error) {
+      console.error("failed to queue render", error);
+      setRenderError(error instanceof Error ? error.message : "failed to queue render");
+    } finally {
+      setIsQueueingRender(false);
+    }
+  };
+
   const lyricLines = useMemo(() => {
     return lyrics
       .split("\n")
@@ -89,6 +161,8 @@ export function LandingShell() {
         time: (segment?.start ?? 0) + index * 2.5
       }));
   }, [lyrics, segment?.start]);
+
+  const renderBusy = isQueueingRender || (renderJob?.status === "queued" || renderJob?.status === "processing");
 
   return (
     <div className="grid gap-8 lg:grid-cols-[2fr,1.2fr]">
@@ -111,7 +185,7 @@ export function LandingShell() {
         <SegmentPicker suggested={suggestions} onSelect={(segment) => setSegment(segment)} />
         <LyricEditor onChange={(value) => setLyrics(value)} />
         <AudioControls />
-        <ExportPanel onExport={(options) => console.log("export", { options, segment, spotifyMetadata })} />
+        <ExportPanel onExport={onExport} busy={renderBusy} job={renderJob} error={renderError} />
       </div>
     </div>
   );

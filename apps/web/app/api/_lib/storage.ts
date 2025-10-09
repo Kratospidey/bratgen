@@ -7,11 +7,21 @@ import { Readable } from "stream";
 import type { StoredFileSummary, StoredUploadSummary } from "@/lib/uploads";
 
 const projectRoot = path.resolve(process.cwd(), "..", "..");
-const storageRoot = process.env.BRATGEN_STORAGE ?? path.join(projectRoot, "storage");
-const uploadRoot = path.join(storageRoot, "uploads");
+export const storageRoot = process.env.BRATGEN_STORAGE ?? path.join(projectRoot, "storage");
+export const uploadRoot = path.join(storageRoot, "uploads");
 
 async function ensureUploadDir(id: string) {
   await mkdir(path.join(uploadRoot, id), { recursive: true });
+}
+
+let ensuredBase = false;
+
+async function ensureBaseDirs() {
+  if (ensuredBase) {
+    return;
+  }
+  await mkdir(uploadRoot, { recursive: true });
+  ensuredBase = true;
 }
 
 async function persistFile(file: File, destination: string): Promise<StoredFileSummary> {
@@ -38,6 +48,7 @@ export async function createUpload({
   audio?: File | null;
   duration: number;
 }): Promise<StoredUploadSummary> {
+  await ensureBaseDirs();
   const id = randomUUID();
   await ensureUploadDir(id);
   const uploadDir = path.join(uploadRoot, id);
@@ -69,6 +80,7 @@ export async function createUpload({
 
 export async function getUpload(id: string): Promise<StoredUploadSummary | null> {
   try {
+    await ensureBaseDirs();
     const metaPath = path.join(uploadRoot, id, "meta.json");
     const raw = await readFile(metaPath, "utf-8");
     return JSON.parse(raw) as StoredUploadSummary;
@@ -79,8 +91,9 @@ export async function getUpload(id: string): Promise<StoredUploadSummary | null>
 
 export async function listUploads(): Promise<StoredUploadSummary[]> {
   try {
-      const directories = await readdir(uploadRoot);
-      const uploads: StoredUploadSummary[] = [];
+    await ensureBaseDirs();
+    const directories = await readdir(uploadRoot);
+    const uploads: StoredUploadSummary[] = [];
     for (const entry of directories) {
       const maybeUpload = await getUpload(entry);
       if (maybeUpload) {

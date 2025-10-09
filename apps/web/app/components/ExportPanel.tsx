@@ -1,10 +1,14 @@
 "use client";
 
 import { Card, Button, Label } from "@bratgen/ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { RenderJob } from "@/lib/api";
 
 interface ExportPanelProps {
   onExport?: (options: ExportOptions) => void;
+  busy?: boolean;
+  job?: RenderJob | null;
+  error?: string | null;
 }
 
 export interface ExportOptions {
@@ -14,11 +18,29 @@ export interface ExportOptions {
   includeOriginal: boolean;
 }
 
-export function ExportPanel({ onExport }: ExportPanelProps) {
+export function ExportPanel({ onExport, busy = false, job = null, error = null }: ExportPanelProps) {
   const [resolution, setResolution] = useState<ExportOptions["resolution"]>("1080p");
   const [aspect, setAspect] = useState<ExportOptions["aspect"]>("9:16");
   const [includeMusic, setIncludeMusic] = useState(true);
   const [includeOriginal, setIncludeOriginal] = useState(false);
+
+  const jobStatus = useMemo(() => {
+    if (!job) {
+      return null;
+    }
+    switch (job.status) {
+      case "queued":
+        return "queued for render";
+      case "processing":
+        return "rendering…";
+      case "completed":
+        return "render complete";
+      case "failed":
+        return job.error ?? "render failed";
+      default:
+        return null;
+    }
+  }, [job]);
 
   return (
     <Card className="space-y-4" id="export">
@@ -80,12 +102,29 @@ export function ExportPanel({ onExport }: ExportPanelProps) {
       </div>
       <Button
         className="w-full"
+        disabled={busy}
         onClick={() =>
           onExport?.({ resolution, aspect, includeMusic, includeOriginal })
         }
       >
-        queue server render
+        {busy ? "queuing…" : "queue server render"}
       </Button>
+      {(error || jobStatus) && (
+        <div className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-300">
+          {error && <p className="text-red-400">{error}</p>}
+          {jobStatus && !error && <p>{jobStatus}</p>}
+          {job?.status === "completed" && job.output && (
+            <a
+              href={job.output.downloadUrl}
+              className="mt-2 inline-flex items-center text-brat underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              download render ({Math.round(job.output.size / (1024 * 1024))} mb)
+            </a>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
