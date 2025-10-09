@@ -158,6 +158,39 @@ RenderJob { id, status, params, progress, resultUrl }
 ```
 
 `AssetRef` mirrors the upload manifest structure (`path`, `checksum`, `mimeType`, `size`, `originalName`) and can map to S3 keys
+---
+
+## 10) Remaining Work (tracking)
+
+The following items are not yet implemented and block a full end‑to‑end release:
+
+### Backend & Services
+
+* Implement `/api/render` job ingestion backed by the ffmpeg wrapper with queued execution and persisted results.
+* Add job status polling at `/api/render/:jobId` and wire uploads to render outputs.
+* Build `/api/analyze/audio` to run waveform, beat grid, and onset feature extraction on stored assets.
+* Provide `/api/lyrics/align` to call Whisper (or similar) for lyric timing and store timed lyric documents.
+* Integrate persistent storage abstraction (S3‑compatible) for production deployments beyond local disk.
+
+### Media Processing
+
+* Run server‑side ffprobe on uploads to capture duration, resolution, and loudness metadata.
+* Implement audio mixing: mute/mix logic between source video and Spotify track with gain controls and fades.
+* Generate waveform previews and beat/chroma scoring for smarter segment selection when Spotify data is unavailable.
+* Execute Whisper‑based auto‑timing for lyrics and snap timings to beat markers.
+
+### Frontend Experience
+
+* Replace stubbed audio controls with real playback/mix state derived from backend analysis.
+* Expand the preview canvas to render full brat typography, per‑frame contrast toggling, and lyric animations.
+* Add lyric editing workflows, timing adjustments, and style presets per the PRD components list.
+* Connect export actions to the render job API and expose progress + download links.
+
+### Infrastructure & QA
+
+* Introduce background worker orchestration (e.g., BullMQ/Redis) for render and analysis tasks.
+* Add automated tests and linting for new services plus integration coverage for API routes.
+* Document deployment requirements, environment variables, and operational runbooks.
 in production.
 
 ---
