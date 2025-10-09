@@ -1,4 +1,5 @@
 import { spotifyLinkSchema } from "@/lib/validation";
+import type { SegmentCandidate } from "@bratgen/analysis";
 
 export interface SpotifyMetadataResponse {
   id: string;
@@ -7,6 +8,7 @@ export interface SpotifyMetadataResponse {
   duration: number;
   albumArt: string | null;
   previewUrl: string | null;
+  candidates: SegmentCandidate[];
 }
 
 export async function fetchSpotifyMetadata(url: string): Promise<SpotifyMetadataResponse> {

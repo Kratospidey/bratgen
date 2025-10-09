@@ -2,7 +2,7 @@
 
 import { Card, Button, Label } from "@bratgen/ui";
 import { SegmentSelectionResult } from "@bratgen/analysis";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface SegmentPickerProps {
   suggested: SegmentSelectionResult[];
@@ -20,6 +20,10 @@ export function SegmentPicker({ suggested, onSelect }: SegmentPickerProps) {
   );
 
   const [selectedKey, setSelectedKey] = useState<string | null>(options[0]?.key ?? null);
+
+  useEffect(() => {
+    setSelectedKey(options[0]?.key ?? null);
+  }, [options]);
 
   return (
     <Card className="space-y-4" id="workflow">

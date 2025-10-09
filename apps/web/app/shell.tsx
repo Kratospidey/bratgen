@@ -9,9 +9,10 @@ import { SegmentPicker } from "@/components/SegmentPicker";
 import { AudioControls } from "@/components/AudioControls";
 import { ExportPanel } from "@/components/ExportPanel";
 import { UploadFormInput } from "@/lib/validation";
-import { SegmentCandidate, SegmentSelectionResult, scoreCandidate, selectBestSegment } from "@bratgen/analysis";
+import { SegmentSelectionResult, scoreCandidate, selectBestSegment } from "@bratgen/analysis";
 import type { SpotifyMetadataResponse } from "@/lib/api";
 import { Button, Card } from "@bratgen/ui";
+import type { StoredUploadSummary } from "@/lib/uploads";
 
 export function LandingShell() {
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
@@ -19,36 +20,52 @@ export function LandingShell() {
   const [spotifyMetadata, setSpotifyMetadata] = useState<SpotifyMetadataResponse | null>(null);
   const [segment, setSegment] = useState<SegmentSelectionResult | null>(null);
   const [suggestions, setSuggestions] = useState<SegmentSelectionResult[]>([]);
+  const [upload, setUpload] = useState<StoredUploadSummary | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const onUpload = async (data: UploadFormInput) => {
-    if (data.video) {
+    if (!data.video) {
+      return;
+    }
+    setUploadError(null);
+    setIsUploading(true);
+    try {
       const url = URL.createObjectURL(data.video);
       setVideoUrl(url);
-    }
-    if (data.audio) {
-      // In a real system we would upload and analyze the file here.
-      console.log("audio file uploaded", data.audio.name);
+
+      const formData = new FormData();
+      formData.append("duration", data.duration.toString());
+      formData.append("video", data.video);
+      if (data.audio) {
+        formData.append("audio", data.audio);
+      }
+
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ message: "upload failed" }));
+        throw new Error(payload.message ?? "upload failed");
+      }
+
+      const payload = (await response.json()) as { upload: StoredUploadSummary };
+      setUpload(payload.upload);
+    } catch (error) {
+      console.error("upload failed", error);
+      setUploadError(error instanceof Error ? error.message : "failed to upload files");
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const onSpotifyMetadata = (metadata: SpotifyMetadataResponse) => {
     setSpotifyMetadata(metadata);
     const usableDuration = Math.min(metadata.duration, 30);
-    const offsetWindow = Math.max(metadata.duration - usableDuration, 0);
-    const candidates: SegmentCandidate[] = Array.from({ length: 3 }).map((_, index) => {
-      const start = offsetWindow * (index / 3);
-      const end = start + usableDuration;
-      return {
-        start,
-        end,
-        energy: 0.6 + index * 0.15,
-        loudness: -8 + index * 2,
-        confidence: 0.7 + index * 0.1
-      };
-    });
-
-    const best = selectBestSegment({ targetDuration: usableDuration, candidates });
-    const scored: SegmentSelectionResult[] = candidates
+    const best = selectBestSegment({ targetDuration: usableDuration, candidates: metadata.candidates });
+    const scored: SegmentSelectionResult[] = metadata.candidates
       .map((candidate) => ({
         start: candidate.start,
         end: candidate.end,
@@ -89,7 +106,7 @@ export function LandingShell() {
         </Card>
       </div>
       <div className="space-y-8">
-        <UploadPane onSubmit={onUpload} />
+        <UploadPane onSubmit={onUpload} busy={isUploading} error={uploadError} lastUpload={upload} />
         <SpotifyLinkForm onMetadata={onSpotifyMetadata} />
         <SegmentPicker suggested={suggestions} onSelect={(segment) => setSegment(segment)} />
         <LyricEditor onChange={(value) => setLyrics(value)} />

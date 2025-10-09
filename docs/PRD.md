@@ -4,7 +4,8 @@
 
 Create a minimal, sleek web app where a user uploads a **video** and attaches a **Spotify track link** The app automatically:
 
-* Finds the **best song segment** to fit the video length (or trims video to song end).
+* Finds the **best song segment** to fit the video length (or trims video to song end) using Spotify Audio Analysis when available.
+* Stores uploads on the server with checksums and job IDs so assets persist across refreshes.
 * **Layers the music** over the video for preview; exports use **user‑uploaded audio** or **no music** (per setting).
 * Overlays **lyrics in brat aesthetics without green blocks** — **transparent** text with **auto black/white** per‑frame contrast.
 * Provides a **Mute Original Clip Audio** toggle.
@@ -22,6 +23,14 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 * **Transparent lyric overlay** with auto black/white text for contrast.
 * **Audio control**: toggle **Mute Original Clip Audio**; optional ducking when user audio is present.
 * Export MP4 (H.264 + AAC) up to **60s**.
+
+**Implementation Status (alpha)**
+
+* ✅ Persistent upload storage on local disk with SHA‑256 checksums and retrieval endpoints.
+* ✅ Spotify metadata route integrates real Audio Analysis (when credentials provided) to surface section‑based segment candidates.
+* ✅ Client upload form is wired to `/api/uploads`, showing job IDs and surfacing server errors.
+* 🚧 Audio preview/mix UI still stubbed — needs connection to render queue + ffmpeg mixdowns.
+* 🚧 Whisper timing, lyric sourcing, and export orchestration remain to be built.
 
 **Non‑Goals (v1)**
 ---
@@ -123,12 +132,17 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 
 ## 8) API/Route Design (Next.js)
 
-* `POST /api/upload` → asset IDs.
-* `POST /api/analyze/audio` → waveform, beats, chroma, analysis JSON.
-* `POST /api/segment/select` → input: durations + analysis; output: start/end.
-* `POST /api/lyrics/align` → input: text/.lrc + audioId; output: timed lines.
-* `POST /api/render` → input: asset IDs, segment, style, audioMix: `{ useUserMusic: boolean, muteOriginal: boolean }`; output: jobId.
-* `GET /api/render/:jobId` → status + download URL.
+| Route | Method | Status | Notes |
+| --- | --- | --- | --- |
+| `/api/uploads` | `POST` | ✅ | Accepts `FormData` (`video`, optional `audio`, `duration`). Persists to disk with SHA‑256 checksums and returns upload metadata/ID. |
+| `/api/uploads` | `GET` | ✅ | Lists persisted uploads (most recent first) for debugging/admin tooling. |
+| `/api/uploads/:id` | `GET` | ✅ | Returns a single upload record by ID. |
+| `/api/uploads/:id/files/:kind` | `GET` | ✅ | Streams `video` or `audio` asset back to the client; used for previews and future renders. |
+| `/api/spotify/metadata` | `POST` | ✅ | Validates Spotify link, proxies yt‑dlp metadata, enriches with Spotify Audio Analysis (if `SPOTIFY_CLIENT_ID/SECRET` set), and returns segment candidates. |
+| `/api/render` | `POST` | 🚧 | To be implemented — will accept upload ID, segment, style tokens, and audio mix preferences, enqueueing FFmpeg job. |
+| `/api/render/:jobId` | `GET` | 🚧 | Planned job status polling (queued, rendering, complete) with download URL when ready. |
+| `/api/analyze/audio` | `POST` | 📝 | Planned: derive waveform/beat grid from stored audio/video. |
+| `/api/lyrics/align` | `POST` | 📝 | Planned: queue Whisper alignment against stored audio + raw lyrics text. |
 
 
 ---
@@ -136,11 +150,15 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 ## 9) Data Models (simplified)
 
 ```ts
+Upload { id, createdAt, duration, files: { video: AssetRef; audio?: AssetRef } }
 Asset { id, kind: 'video'|'audio'|'lyrics', url, duration, meta }
 Analysis { assetId, duration, bpm, beats: number[], chroma: number[][], rms: number[] }
 TimedLyric { t0: number, t1: number, text: string }
 RenderJob { id, status, params, progress, resultUrl }
 ```
+
+`AssetRef` mirrors the upload manifest structure (`path`, `checksum`, `mimeType`, `size`, `originalName`) and can map to S3 keys
+in production.
 
 ---
 
@@ -165,9 +183,9 @@ RenderJob { id, status, params, progress, resultUrl }
 
 ## 12) Security & Privacy
 
-* All uploads via signed URLs; scans for file type/size.
-* Auto‑purge assets after **24 hours** in demo environment.
-* No storage of OAuth tokens server‑side beyond session scope.
+* Dev/staging: uploads written to `storage/uploads` with SHA‑256 manifest; cron/purge task (todo) should sweep after **24 hours**.
+* Prod: switch to signed URLs + object storage (R2/S3) with antivirus scan + lifecycle policy.
+* Spotify client credentials cached in memory only; no long‑term token storage.
 
 ---
 

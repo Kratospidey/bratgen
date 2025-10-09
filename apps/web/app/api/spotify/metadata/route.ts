@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { spotifyLinkSchema } from "@/lib/validation";
 import ytDlp from "yt-dlp-exec";
+import { fetchAudioAnalysisCandidates } from "@/app/api/_lib/spotify";
+import type { SegmentCandidate } from "@bratgen/analysis";
 
 export const runtime = "nodejs";
 
@@ -33,6 +35,27 @@ export async function POST(request: Request) {
     })) as YtDlpSpotifyTrack;
 
     const albumArt = metadata.thumbnail ?? metadata.thumbnails?.[0]?.url ?? null;
+    const targetDuration = Math.min(metadata.duration ?? 30, 30);
+    let candidates: SegmentCandidate[] = [];
+
+    try {
+      candidates = await fetchAudioAnalysisCandidates(metadata.id, targetDuration);
+    } catch (analysisError) {
+      console.warn("spotify analysis fetch failed", analysisError);
+    }
+
+    if (!candidates.length) {
+      candidates = Array.from({ length: 3 }).map((_, index) => {
+        const start = Math.max(metadata.duration - targetDuration, 0) * (index / 3);
+        return {
+          start,
+          end: start + targetDuration,
+          energy: 0.5 + index * 0.1,
+          loudness: -10 + index * 2,
+          confidence: 0.5 + index * 0.1
+        };
+      });
+    }
 
     return NextResponse.json({
       id: metadata.id,
@@ -40,7 +63,8 @@ export async function POST(request: Request) {
       artist: metadata.uploader,
       duration: metadata.duration,
       albumArt,
-      previewUrl: metadata.url ?? null
+      previewUrl: metadata.url ?? null,
+      candidates
     });
   } catch (error) {
     console.error("spotify metadata fetch failed", error);
