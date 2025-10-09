@@ -2,7 +2,7 @@
 
 ## 1) Summary
 
-Create a minimal, sleek web app where a user uploads a **video** and attaches a **Spotify track link** (single provider for v1) or an optional **local audio file**. The app automatically:
+Create a minimal, sleek web app where a user uploads a **video** and attaches a **Spotify track link** The app automatically:
 
 * Finds the **best song segment** to fit the video length (or trims video to song end).
 * **Layers the music** over the video for preview; exports use **user‑uploaded audio** or **no music** (per setting).
