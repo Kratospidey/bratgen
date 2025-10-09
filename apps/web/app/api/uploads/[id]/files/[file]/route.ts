@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createFileStream, getUpload, notFoundResponse } from "@/app/api/_lib/storage";
+import { createFileStreamAsync, getUpload, notFoundResponse } from "@/app/api/_lib/storage";
 import { Readable } from "stream";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ export async function GET(_: Request, { params }: { params: { id: string; file: 
     return notFoundResponse("file not found");
   }
 
-  const nodeStream = createFileStream(stored);
+  const nodeStream = await createFileStreamAsync(stored);
   const body = Readable.toWeb(nodeStream) as unknown as BodyInit;
   return new NextResponse(body, {
     headers: {

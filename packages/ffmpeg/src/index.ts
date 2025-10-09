@@ -8,6 +8,9 @@ export interface MixdownRequest {
   musicGainDb?: number;
   startTime?: number;
   duration?: number;
+  duckingDb?: number;
+  fadeMs?: number;
+  onProgress?: (progress: number) => void;
 }
 
 export function renderPreview({
@@ -17,7 +20,10 @@ export function renderPreview({
   muteOriginal = false,
   musicGainDb = 0,
   startTime,
-  duration
+  duration,
+  duckingDb = 0,
+  fadeMs = 0,
+  onProgress
 }: MixdownRequest) {
   return new Promise<void>((resolve, reject) => {
     const command = ffmpeg();
@@ -53,17 +59,62 @@ export function renderPreview({
       if (muteOriginal) {
         audioOutput = musicInput;
       } else {
+        let primaryInput = "0:a";
+
+        if (duckingDb > 0) {
+          const sidechainLabel = "ducked";
+          filters.push({
+            filter: "sidechaincompress",
+            options: {
+              level_in: 1,
+              level_sc: 1,
+              threshold: (-duckingDb).toString(),
+              ratio: 6,
+              attack: 5,
+              release: 100
+            },
+            inputs: ["0:a", musicInput],
+            outputs: sidechainLabel
+          });
+          primaryInput = sidechainLabel;
+        }
+
         const mixLabel = "mixed";
         filters.push({
           filter: "amix",
           options: { inputs: 2, dropout_transition: 0 },
-          inputs: ["0:a", musicInput],
+          inputs: [primaryInput, musicInput],
           outputs: mixLabel
         });
         audioOutput = mixLabel;
       }
     } else if (muteOriginal) {
       command.noAudio();
+    }
+
+    if (audioOutput && fadeMs > 0) {
+      const fadeLabel = "faded";
+      filters.push({
+        filter: "afade",
+        options: {
+          t: "in",
+          st: 0,
+          d: fadeMs / 1000
+        },
+        inputs: audioOutput,
+        outputs: fadeLabel
+      });
+      filters.push({
+        filter: "afade",
+        options: {
+          t: "out",
+          st: Math.max((duration ?? 0) - fadeMs / 1000, 0),
+          d: fadeMs / 1000
+        },
+        inputs: fadeLabel,
+        outputs: "faded_out"
+      });
+      audioOutput = "faded_out";
     }
 
     if (filters.length > 0) {
@@ -89,6 +140,32 @@ export function renderPreview({
       command.outputOptions("-c:a", "aac", "-b:a", "192k");
     }
 
+    if (onProgress) {
+      command.on("progress", (progress) => {
+        if (!progress.timemark) {
+          return;
+        }
+        const seconds = timemarkToSeconds(progress.timemark);
+        const total = duration ?? seconds;
+        if (total > 0) {
+          onProgress(Math.min(1, seconds / total));
+        }
+      });
+    }
+
     command.output(outputPath).on("end", () => resolve()).on("error", reject).run();
   });
+}
+
+function timemarkToSeconds(timemark: string) {
+  const parts = timemark.split(":").map(Number);
+  if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts;
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  if (parts.length === 2) {
+    const [minutes, seconds] = parts;
+    return minutes * 60 + seconds;
+  }
+  return Number(parts[0]) || 0;
 }

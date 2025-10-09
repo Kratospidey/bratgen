@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Button, Label } from "@bratgen/ui";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RenderJob } from "@/lib/api";
 
 interface ExportPanelProps {
@@ -9,6 +9,9 @@ interface ExportPanelProps {
   busy?: boolean;
   job?: RenderJob | null;
   error?: string | null;
+  includeMusic?: boolean;
+  includeOriginal?: boolean;
+  onMixChange?: (value: { includeMusic: boolean; includeOriginal: boolean }) => void;
 }
 
 export interface ExportOptions {
@@ -18,11 +21,27 @@ export interface ExportOptions {
   includeOriginal: boolean;
 }
 
-export function ExportPanel({ onExport, busy = false, job = null, error = null }: ExportPanelProps) {
+export function ExportPanel({
+  onExport,
+  busy = false,
+  job = null,
+  error = null,
+  includeMusic = true,
+  includeOriginal = false,
+  onMixChange
+}: ExportPanelProps) {
   const [resolution, setResolution] = useState<ExportOptions["resolution"]>("1080p");
   const [aspect, setAspect] = useState<ExportOptions["aspect"]>("9:16");
-  const [includeMusic, setIncludeMusic] = useState(true);
-  const [includeOriginal, setIncludeOriginal] = useState(false);
+  const [musicToggle, setMusicToggle] = useState(includeMusic);
+  const [originalToggle, setOriginalToggle] = useState(includeOriginal);
+
+  useEffect(() => {
+    setMusicToggle(includeMusic);
+  }, [includeMusic]);
+
+  useEffect(() => {
+    setOriginalToggle(includeOriginal);
+  }, [includeOriginal]);
 
   const jobStatus = useMemo(() => {
     if (!job) {
@@ -32,7 +51,7 @@ export function ExportPanel({ onExport, busy = false, job = null, error = null }
       case "queued":
         return "queued for render";
       case "processing":
-        return "rendering…";
+        return `rendering… ${(job.progress * 100).toFixed(0)}%`;
       case "completed":
         return "render complete";
       case "failed":
@@ -86,8 +105,12 @@ export function ExportPanel({ onExport, busy = false, job = null, error = null }
         <span className="text-zinc-300">include spotify mix</span>
         <input
           type="checkbox"
-          checked={includeMusic}
-          onChange={(event) => setIncludeMusic(event.target.checked)}
+          checked={musicToggle}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setMusicToggle(next);
+            onMixChange?.({ includeMusic: next, includeOriginal: originalToggle });
+          }}
           className="h-4 w-4 accent-brat"
         />
       </div>
@@ -95,8 +118,12 @@ export function ExportPanel({ onExport, busy = false, job = null, error = null }
         <span className="text-zinc-300">include original clip audio</span>
         <input
           type="checkbox"
-          checked={includeOriginal}
-          onChange={(event) => setIncludeOriginal(event.target.checked)}
+          checked={originalToggle}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setOriginalToggle(next);
+            onMixChange?.({ includeMusic: musicToggle, includeOriginal: next });
+          }}
           className="h-4 w-4 accent-brat"
         />
       </div>
@@ -104,15 +131,24 @@ export function ExportPanel({ onExport, busy = false, job = null, error = null }
         className="w-full"
         disabled={busy}
         onClick={() =>
-          onExport?.({ resolution, aspect, includeMusic, includeOriginal })
+          onExport?.({ resolution, aspect, includeMusic: musicToggle, includeOriginal: originalToggle })
         }
       >
         {busy ? "queuing…" : "queue server render"}
       </Button>
       {(error || jobStatus) && (
-        <div className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-300">
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-300">
           {error && <p className="text-red-400">{error}</p>}
           {jobStatus && !error && <p>{jobStatus}</p>}
+          {job?.status === "processing" && (
+            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-brat"
+                style={{ width: `${Math.max(5, Math.round(job.progress * 100))}%` }}
+              />
+            </div>
+          )}
+          {job && <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">attempts {job.attempts}</p>}
           {job?.status === "completed" && job.output && (
             <a
               href={job.output.downloadUrl}

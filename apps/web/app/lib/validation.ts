@@ -38,8 +38,24 @@ export const renderRequestSchema = z.object({
     aspect: z.enum(["9:16", "1:1", "16:9"]),
     includeMusic: z.boolean(),
     includeOriginal: z.boolean(),
-    musicGainDb: z.number().min(-24).max(12).optional()
+    musicGainDb: z.number().min(-24).max(12).optional(),
+    duckingDb: z.number().min(0).max(24).optional(),
+    fadeMs: z.number().min(0).max(4000).optional()
   })
 });
 
 export type RenderRequestInput = z.infer<typeof renderRequestSchema>;
+
+export const audioAnalysisRequestSchema = z.object({
+  uploadId: z.string().uuid(),
+  targetDuration: z.number().min(5).max(120).optional()
+});
+
+export type AudioAnalysisInput = z.infer<typeof audioAnalysisRequestSchema>;
+
+export const lyricAlignmentRequestSchema = z.object({
+  uploadId: z.string().uuid(),
+  lyrics: z.string().min(1)
+});
+
+export type LyricAlignmentInput = z.infer<typeof lyricAlignmentRequestSchema>;

@@ -1,11 +1,12 @@
-import { createHash, randomUUID } from "crypto";
-import { createReadStream } from "fs";
-import { mkdir, readFile, stat, writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
+import { mkdir } from "fs/promises";
 import path from "path";
 import type { StoredFileSummary } from "@/lib/uploads";
-import { storageRoot } from "@/app/api/_lib/storage";
+import { renderRoot } from "@/app/api/_lib/paths";
+import { getRecord, listRecords, upsertRecord } from "@/app/api/_lib/datastore";
+import { registerGeneratedFile } from "@/app/api/_lib/storage";
 
-export type RenderJobStatus = "queued" | "processing" | "completed" | "failed";
+export type RenderJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 
 export interface RenderJobOptions {
   resolution: "720p" | "1080p";
@@ -13,6 +14,8 @@ export interface RenderJobOptions {
   includeMusic: boolean;
   includeOriginal: boolean;
   musicGainDb?: number;
+  duckingDb?: number;
+  fadeMs?: number;
 }
 
 export interface RenderSegment {
@@ -28,28 +31,16 @@ export interface RenderJobManifest {
   status: RenderJobStatus;
   segment: RenderSegment;
   options: RenderJobOptions;
+  attempts: number;
   output?: StoredFileSummary | null;
   error?: string | null;
+  progress?: number;
 }
 
-const renderRoot = path.join(storageRoot, "renders");
+const TABLE = "render_jobs";
 
-let ensuredRoot = false;
-
-async function ensureRenderRoot() {
-  if (ensuredRoot) {
-    return;
-  }
-  await mkdir(renderRoot, { recursive: true });
-  ensuredRoot = true;
-}
-
-function jobDir(id: string) {
-  return path.join(renderRoot, id);
-}
-
-function metaPath(id: string) {
-  return path.join(jobDir(id), "meta.json");
+async function ensureRenderDir(id: string) {
+  await mkdir(path.join(renderRoot, id), { recursive: true });
 }
 
 export async function createRenderJobManifest({
@@ -61,7 +52,6 @@ export async function createRenderJobManifest({
   segment: RenderSegment;
   options: RenderJobOptions;
 }): Promise<RenderJobManifest> {
-  await ensureRenderRoot();
   const id = randomUUID();
   const manifest: RenderJobManifest = {
     id,
@@ -71,77 +61,72 @@ export async function createRenderJobManifest({
     status: "queued",
     segment,
     options,
+    attempts: 0,
     output: null,
-    error: null
+    error: null,
+    progress: 0
   };
-
-  await mkdir(jobDir(id), { recursive: true });
-  await writeFile(metaPath(id), JSON.stringify(manifest, null, 2));
+  await ensureRenderDir(id);
+  await upsertRecord(TABLE, manifest);
   return manifest;
 }
 
 export async function getRenderJobManifest(id: string): Promise<RenderJobManifest | null> {
-  try {
-    const raw = await readFile(metaPath(id), "utf-8");
-    return JSON.parse(raw) as RenderJobManifest;
-  } catch (error) {
-    return null;
-  }
+  return getRecord<RenderJobManifest>(TABLE, id);
 }
-
-export type RenderJobUpdate = Partial<Pick<RenderJobManifest, "status" | "output" | "error" >>;
 
 export async function updateRenderJobManifest(
   id: string,
-  update: RenderJobUpdate
+  update: Partial<Omit<RenderJobManifest, "id" | "uploadId" | "createdAt" | "segment" | "options">> &
+    Partial<Pick<RenderJobManifest, "segment" | "options">>
 ): Promise<RenderJobManifest | null> {
   const current = await getRenderJobManifest(id);
   if (!current) {
     return null;
   }
-
   const next: RenderJobManifest = {
     ...current,
     ...update,
     updatedAt: new Date().toISOString(),
     output: update.output ?? current.output ?? null,
     error: update.error ?? current.error ?? null,
-    status: update.status ?? current.status
+    attempts: update.attempts ?? current.attempts,
+    progress: update.progress ?? current.progress
   };
-
-  await writeFile(metaPath(id), JSON.stringify(next, null, 2));
+  await upsertRecord(TABLE, next);
   return next;
 }
 
-export function renderOutputPath(id: string) {
-  return path.join(jobDir(id), "output.mp4");
+export async function listRenderJobs(): Promise<RenderJobManifest[]> {
+  const jobs = await listRecords<RenderJobManifest>(TABLE);
+  return jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-export async function summarizeRenderOutput({
+export function renderOutputPath(id: string) {
+  return path.join(renderRoot, id, "output.mp4");
+}
+
+export async function persistRenderOutput({
   id,
+  uploadId,
   originalName,
-  mimeType
+  mimeType,
+  absolutePath
 }: {
   id: string;
+  uploadId: string;
   originalName: string;
   mimeType: string;
+  absolutePath: string;
 }): Promise<StoredFileSummary> {
-  const output = renderOutputPath(id);
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(output);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("end", () => resolve());
-    stream.on("error", (error) => reject(error));
-  });
-  const stats = await stat(output);
-  return {
-    path: output,
-    size: stats.size,
+  await ensureRenderDir(id);
+  return registerGeneratedFile({
+    absolutePath,
+    uploadId,
     originalName,
     mimeType,
-    checksum: hash.digest("hex")
-  };
+    scope: "render"
+  });
 }
 
 export function ensureDownloadUrl(id: string) {

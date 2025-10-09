@@ -26,12 +26,12 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 
 **Implementation Status (alpha)**
 
-* ✅ Persistent upload storage on local disk with SHA‑256 checksums and retrieval endpoints.
-* ✅ Spotify metadata route integrates real Audio Analysis (when credentials provided) to surface section‑based segment candidates.
-* ✅ Client upload form is wired to `/api/uploads`, showing job IDs and surfacing server errors.
-* ✅ Server render queue exposes `/api/render` + `/api/render/:id` with FFmpeg mixdowns and downloadable results.
-* 🚧 Audio preview/mix UI still stubbed — needs connection to render queue + ffmpeg mixdowns.
-* 🚧 Whisper timing, lyric sourcing, and export orchestration remain to be built.
+* ✅ Persistent upload storage with SHA‑256 manifests backed by disk (dev) or S3-compatible object storage (prod).
+* ✅ Spotify metadata route integrates Audio Analysis; `/api/analyze/audio` generates local waveform/beat/chroma data when Spotify is absent.
+* ✅ Client upload + export flows persist uploads, surface server errors, and drive a Redis/BullMQ render queue with resumable manifests.
+* ✅ Server renders mix music/original audio with gain, ducking, fades, and expose downloadable files via `/api/render/:id/file`.
+* ✅ Audio controls show waveform/beat grids and mix automation wired to exports; lyric alignment runs via `/api/lyrics/align` (Whisper optional).
+* 🚧 Remaining polish: advanced lyric styling, manual timing overrides, and richer job management/monitoring.
 
 **Non‑Goals (v1)**
 ---
@@ -143,8 +143,8 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 | `/api/render` | `POST` | ✅ | Queues a server-side FFmpeg render using stored upload assets and export preferences. |
 | `/api/render/:jobId` | `GET` | ✅ | Returns render job status (queued, processing, completed, failed) plus download URL when ready. |
 | `/api/render/:jobId/file` | `GET` | ✅ | Streams the finished render output once the job succeeds. |
-| `/api/analyze/audio` | `POST` | 📝 | Planned: derive waveform/beat grid from stored audio/video. |
-| `/api/lyrics/align` | `POST` | 📝 | Planned: queue Whisper alignment against stored audio + raw lyrics text. |
+| `/api/analyze/audio` | `POST` | ✅ | Generates waveform, beat grid, tempo, and fallback segment candidates from stored audio/video. |
+| `/api/lyrics/align` | `POST` | ✅ | Aligns lyrics against stored audio using Whisper (optional) + beat snapping and returns timed lines. |
 
 
 ---
@@ -168,32 +168,27 @@ The following items are not yet implemented and block a full end‑to‑end rele
 
 ### Backend & Services
 
-* Harden render queue with persistent workers/backoff instead of the current in-memory dispatcher.
-* Add job cancellation + retry management and persist queue metadata to durable storage.
-* Build `/api/analyze/audio` to run waveform, beat grid, and onset feature extraction on stored assets.
-* Provide `/api/lyrics/align` to call Whisper (or similar) for lyric timing and store timed lyric documents.
-* Integrate persistent storage abstraction (S3‑compatible) for production deployments beyond local disk.
+* Promote the BullMQ render queue into a dedicated worker service with health endpoints, cancellation, and retry dashboards.
+* Persist Whisper transcripts/timed lyrics alongside analysis artifacts to reuse across exports and future edits.
+* Capture ffprobe metadata (resolution, fps, loudness) and waveform thumbnails for admin/debug tooling.
 
 ### Media Processing
 
-* Run server‑side ffprobe on uploads to capture duration, resolution, and loudness metadata.
-* Expand audio mixing: add ducking automation, fades, and per-track gain curves (basic mixdown now supported server-side).
-* Generate waveform previews and beat/chroma scoring for smarter segment selection when Spotify data is unavailable.
-* Execute Whisper‑based auto‑timing for lyrics and snap timings to beat markers.
+* Add per-beat automation curves (sidechain depth envelopes, clip gain rides) and loudness normalization options.
+* Support lyric word-level reveals and motion templates driven by beat grid + chroma fingerprints.
+* Cache Whisper models locally and allow selecting lightweight vs. large models per deployment profile.
 
 ### Frontend Experience
 
-* Replace stubbed audio controls with real playback/mix state derived from backend analysis.
-* Expand the preview canvas to render full brat typography, per‑frame contrast toggling, and lyric animations.
-* Add lyric editing workflows, timing adjustments, and style presets per the PRD components list.
-* Polish export UX with progress indicators, cancel/retry controls, and integration with final delivery surfaces (basic queue wiring done).
+* Layer in manual lyric timing adjustments, typography presets, and style tokens per PRD scope.
+* Enhance the preview canvas with beat-synced animations, motion presets, and accessible color controls.
+* Surface render queue state (progress history, retries) with cancel/retry actions and download archive.
 
 ### Infrastructure & QA
 
-* Introduce background worker orchestration (e.g., BullMQ/Redis) for render and analysis tasks.
-* Add automated tests and linting for new services plus integration coverage for API routes.
-* Document deployment requirements, environment variables, and operational runbooks.
-in production.
+* Add automated coverage for analysis, lyrics, and render APIs; introduce end-to-end regression tests.
+* Provide production deployment guide (Redis, S3, optional Whisper) plus monitoring/runbook documentation.
+
 
 ---
 

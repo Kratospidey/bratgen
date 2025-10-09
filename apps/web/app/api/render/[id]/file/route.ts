@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createFileStream } from "@/app/api/_lib/storage";
+import { createFileStreamAsync } from "@/app/api/_lib/storage";
 import { getRenderJobManifest } from "@/app/api/_lib/renders";
 import { Readable } from "stream";
 
@@ -11,7 +11,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({ message: "render not found" }, { status: 404 });
   }
 
-  const stream = Readable.toWeb(createFileStream(manifest.output)) as unknown as BodyInit;
+  const nodeStream = await createFileStreamAsync(manifest.output);
+  const stream = Readable.toWeb(nodeStream) as unknown as BodyInit;
   return new NextResponse(stream, {
     headers: {
       "content-type": manifest.output.mimeType,

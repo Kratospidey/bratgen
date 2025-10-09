@@ -57,9 +57,13 @@ export interface RenderJob {
     includeMusic: boolean;
     includeOriginal: boolean;
     musicGainDb?: number;
+    duckingDb?: number;
+    fadeMs?: number;
   };
   output: RenderJobOutput | null;
   error: string | null;
+  progress: number;
+  attempts: number;
 }
 
 export interface RenderRequestPayload {
@@ -71,6 +75,8 @@ export interface RenderRequestPayload {
     includeMusic: boolean;
     includeOriginal: boolean;
     musicGainDb?: number;
+    duckingDb?: number;
+    fadeMs?: number;
   };
 }
 
@@ -98,4 +104,58 @@ export async function queueRenderJob(payload: RenderRequestPayload): Promise<Ren
 export async function fetchRenderJob(id: string): Promise<RenderJob> {
   const response = await fetch(`/api/render/${id}`);
   return handleRenderResponse(response);
+}
+
+export interface AudioAnalysisResponse {
+  id: string;
+  uploadId: string;
+  duration: number;
+  sampleRate: number;
+  waveform: number[];
+  beats: number[];
+  tempo: number;
+  energy: number;
+  chroma: number[];
+  segments: SegmentCandidate[];
+}
+
+export async function analyzeAudio(payload: { uploadId: string; targetDuration?: number }): Promise<AudioAnalysisResponse> {
+  const response = await fetch("/api/analyze/audio", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const message = await response.json().catch(() => ({ message: "analysis failed" }));
+    throw new Error(message.message ?? "analysis failed");
+  }
+  const body = (await response.json()) as { analysis: AudioAnalysisResponse };
+  return body.analysis;
+}
+
+export interface AlignedLyric {
+  text: string;
+  start: number;
+  end: number;
+  confidence: number;
+}
+
+export interface LyricAlignmentResponse {
+  lines: AlignedLyric[];
+  duration: number;
+  model: "beats" | "whisper";
+}
+
+export async function alignLyrics(payload: { uploadId: string; lyrics: string }): Promise<LyricAlignmentResponse> {
+  const response = await fetch("/api/lyrics/align", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const message = await response.json().catch(() => ({ message: "alignment failed" }));
+    throw new Error(message.message ?? "alignment failed");
+  }
+  const body = (await response.json()) as { alignment: LyricAlignmentResponse };
+  return body.alignment;
 }
