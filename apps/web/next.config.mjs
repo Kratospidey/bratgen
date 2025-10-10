@@ -1,8 +1,10 @@
 import path from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -21,6 +23,7 @@ const nextConfig = {
       "@/app": path.resolve(__dirname, "./app"),
       "@/components": path.resolve(__dirname, "./app/components"),
       "@/lib": path.resolve(__dirname, "./app/lib"),
+      "fluent-ffmpeg$": require.resolve("fluent-ffmpeg/lib/fluent-ffmpeg"),
     };
     return config;
   }
