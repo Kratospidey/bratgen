@@ -11,6 +11,7 @@ export interface MixdownRequest {
   duckingDb?: number;
   fadeMs?: number;
   onProgress?: (progress: number) => void;
+  musicAutomation?: Array<{ at: number; gainDb: number }>;
 }
 
 export function renderPreview({
@@ -23,7 +24,8 @@ export function renderPreview({
   duration,
   duckingDb = 0,
   fadeMs = 0,
-  onProgress
+  onProgress,
+  musicAutomation
 }: MixdownRequest) {
   return new Promise<void>((resolve, reject) => {
     const command = ffmpeg();
@@ -54,6 +56,20 @@ export function renderPreview({
           outputs: musicLabel
         });
         musicInput = musicLabel;
+      }
+
+      if (musicAutomation?.length) {
+        const automationExpression = buildAutomationExpression(musicAutomation);
+        if (automationExpression) {
+          const automationLabel = "music_auto";
+          filters.push({
+            filter: "volume",
+            options: { volume: automationExpression, eval: "frame" },
+            inputs: musicInput,
+            outputs: automationLabel
+          });
+          musicInput = automationLabel;
+        }
       }
 
       if (muteOriginal) {
@@ -168,4 +184,46 @@ function timemarkToSeconds(timemark: string) {
     return minutes * 60 + seconds;
   }
   return Number(parts[0]) || 0;
+}
+
+export function buildAutomationExpression(points: Array<{ at: number; gainDb: number }>): string | null {
+  if (!points.length) {
+    return null;
+  }
+  const sorted = [...points]
+    .filter((point) => Number.isFinite(point.at) && Number.isFinite(point.gainDb))
+    .sort((a, b) => a.at - b.at)
+    .reduce<Array<{ at: number; gainDb: number }>>((acc, point) => {
+      const last = acc[acc.length - 1];
+      if (!last || Math.abs(point.at - last.at) >= 1e-3) {
+        acc.push({ at: point.at, gainDb: point.gainDb });
+      }
+      return acc;
+    }, []);
+  if (!sorted.length) {
+    return null;
+  }
+  const gain = (db: number) => Math.pow(10, db / 20);
+  const segments: Array<{ end: number; expression: string }> = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const current = sorted[i];
+    const next = sorted[i + 1];
+    const delta = next.at - current.at;
+    if (delta <= 0) {
+      continue;
+    }
+    const startGain = gain(current.gainDb);
+    const endGain = gain(next.gainDb);
+    const slope = (endGain - startGain) / delta;
+    const expr = `${startGain.toFixed(6)}+(${slope.toFixed(6)})*(t-${current.at.toFixed(3)})`;
+    segments.push({ end: next.at, expression: expr });
+  }
+  let expression = `${gain(sorted[sorted.length - 1].gainDb).toFixed(6)}`;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i];
+    expression = `if(lt(t,${segment.end.toFixed(3)}),${segment.expression},${expression})`;
+  }
+  const startGain = gain(sorted[0].gainDb).toFixed(6);
+  expression = `if(lt(t,${sorted[0].at.toFixed(3)}),${startGain},${expression})`;
+  return expression;
 }

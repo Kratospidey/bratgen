@@ -30,8 +30,11 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 * ✅ Spotify metadata route integrates Audio Analysis; `/api/analyze/audio` generates local waveform/beat/chroma data when Spotify is absent.
 * ✅ Client upload + export flows persist uploads, surface server errors, and drive a Redis/BullMQ render queue with resumable manifests.
 * ✅ Server renders mix music/original audio with gain, ducking, fades, and expose downloadable files via `/api/render/:id/file`.
-* ✅ Audio controls show waveform/beat grids and mix automation wired to exports; lyric alignment runs via `/api/lyrics/align` (Whisper optional).
-* 🚧 Remaining polish: advanced lyric styling, manual timing overrides, and richer job management/monitoring.
+* ✅ Audio controls show waveform/beat grids and mix automation wired to exports; lyric alignment runs via `/api/lyrics/align` (Whisper optional) with cached transcripts and manual overrides.
+* ✅ Lyric editor supports beat-synced word timelines, manual timing edits, and brat-style presets surfaced via the styling panel + animated preview canvas.
+* ✅ Render queue exposes cancel/retry actions, health metrics, and download history backed by BullMQ (Redis) with graceful local fallback.
+* ✅ Upload persistence captures ffprobe metadata + thumbnails for each asset with Whisper transcripts cached per checksum.
+* 🚧 Remaining polish: multi-user auth, analytics, and end-to-end QA hardening before release.
 
 **Non‑Goals (v1)**
 ---
@@ -168,26 +171,20 @@ The following items are not yet implemented and block a full end‑to‑end rele
 
 ### Backend & Services
 
-* Promote the BullMQ render queue into a dedicated worker service with health endpoints, cancellation, and retry dashboards.
-* Persist Whisper transcripts/timed lyrics alongside analysis artifacts to reuse across exports and future edits.
-* Capture ffprobe metadata (resolution, fps, loudness) and waveform thumbnails for admin/debug tooling.
+* Harden the BullMQ worker by moving it to a dedicated process with persistence, alerting, and scaling guidance.
+* Wire multi-user auth/session awareness into upload, transcript, and render manifests for tenancy isolation.
 
 ### Media Processing
 
-* Add per-beat automation curves (sidechain depth envelopes, clip gain rides) and loudness normalization options.
-* Support lyric word-level reveals and motion templates driven by beat grid + chroma fingerprints.
-* Cache Whisper models locally and allow selecting lightweight vs. large models per deployment profile.
+* Add mastering options (loudness normalization, stem balancing) and configurable Whisper model selection.
 
 ### Frontend Experience
 
-* Layer in manual lyric timing adjustments, typography presets, and style tokens per PRD scope.
-* Enhance the preview canvas with beat-synced animations, motion presets, and accessible color controls.
-* Surface render queue state (progress history, retries) with cancel/retry actions and download archive.
+* Layer in preset management + collaborative editing along with richer typography palettes and animation templates.
 
 ### Infrastructure & QA
 
-* Add automated coverage for analysis, lyrics, and render APIs; introduce end-to-end regression tests.
-* Provide production deployment guide (Redis, S3, optional Whisper) plus monitoring/runbook documentation.
+* Ship end-to-end regression coverage across upload → analyze → align → render, plus deploy/runbook automation for Redis, S3, and Whisper workloads.
 
 
 ---

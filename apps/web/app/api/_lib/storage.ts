@@ -1,16 +1,18 @@
 import { createHash, randomUUID } from "crypto";
-import { mkdir, stat, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, stat, unlink, writeFile } from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import { Readable } from "stream";
+import { spawn } from "child_process";
+import { tmpdir } from "os";
 import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
-import type { StoredFileSummary, StoredUploadSummary } from "@/lib/uploads";
+import type { StoredFileMetadata, StoredFileSummary, StoredUploadSummary } from "@/lib/uploads";
 import { uploadRoot } from "@/app/api/_lib/paths";
 import { getRecord, listRecords, removeRecord, upsertRecord } from "@/app/api/_lib/datastore";
 
@@ -65,9 +67,13 @@ async function persistFile({
   const checksum = createHash("sha256").update(buffer).digest("hex");
   const fileId = randomUUID();
   const extension = inferExtension(file);
+  let metadata: StoredFileMetadata | undefined;
 
   if (s3Client && s3Bucket) {
     const key = `${role}s/${uploadId}/${fileId}${extension}`;
+    const tempPath = await writeTempFile(buffer, extension || ".bin");
+    metadata = await probeMedia(tempPath).catch(() => undefined);
+    await unlink(tempPath).catch(() => undefined);
     await s3Client.send(
       new PutObjectCommand({
         Bucket: s3Bucket,
@@ -86,7 +92,8 @@ async function persistFile({
       checksum,
       storage: "s3",
       bucket: s3Bucket,
-      key
+      key,
+      metadata
     } satisfies StoredFileSummary;
   }
 
@@ -94,6 +101,7 @@ async function persistFile({
   const destination = path.join(uploadRoot, uploadId, `${fileId}${extension}`);
   await writeFile(destination, buffer);
   const stats = await stat(destination);
+  metadata = await probeMedia(destination).catch(() => undefined);
   return {
     id: fileId,
     path: destination,
@@ -101,7 +109,8 @@ async function persistFile({
     originalName: file.name,
     mimeType: file.type,
     checksum,
-    storage: "local"
+    storage: "local",
+    metadata
   } satisfies StoredFileSummary;
 }
 
@@ -238,6 +247,7 @@ export async function registerGeneratedFile({
   const fileId = randomUUID();
   const stats = await stat(absolutePath);
   const checksum = hash.digest("hex");
+  const metadata = await probeMedia(absolutePath).catch(() => undefined);
 
   if (s3Client && s3Bucket) {
     const key = `${scope}s/${uploadId}/${fileId}${path.extname(absolutePath) || ".mp4"}`;
@@ -260,7 +270,8 @@ export async function registerGeneratedFile({
       checksum,
       storage: "s3",
       bucket: s3Bucket,
-      key
+      key,
+      metadata
     } satisfies StoredFileSummary;
   }
 
@@ -271,7 +282,8 @@ export async function registerGeneratedFile({
     originalName,
     mimeType,
     checksum,
-    storage: "local"
+    storage: "local",
+    metadata
   } satisfies StoredFileSummary;
 }
 
@@ -285,4 +297,136 @@ export function badRequestResponse(message: string): NextResponse {
 
 export function serverErrorResponse(message: string): NextResponse {
   return NextResponse.json({ message }, { status: 500 });
+}
+
+async function writeTempFile(buffer: Buffer, extension: string): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "bratgen-"));
+  const tempPath = path.join(dir, `${randomUUID()}${extension}`);
+  await writeFile(tempPath, buffer);
+  return tempPath;
+}
+
+async function probeMedia(filePath: string): Promise<StoredFileMetadata | undefined> {
+  const raw = await runCommand("ffprobe", [
+    "-v",
+    "quiet",
+    "-print_format",
+    "json",
+    "-show_format",
+    "-show_streams",
+    filePath
+  ]).catch(() => null);
+
+  if (!raw) {
+    return undefined;
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return undefined;
+  }
+
+  const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+  const format = parsed?.format ?? {};
+  const videoStream = streams.find((stream: any) => stream.codec_type === "video");
+  const audioStream = streams.find((stream: any) => stream.codec_type === "audio");
+
+  const metadata: StoredFileMetadata = {
+    duration: format.duration ? Number(format.duration) : undefined,
+    bitrate: format.bit_rate ? Number(format.bit_rate) : undefined,
+    video: videoStream
+      ? {
+          width: videoStream.width ? Number(videoStream.width) : undefined,
+          height: videoStream.height ? Number(videoStream.height) : undefined,
+          fps:
+            videoStream.avg_frame_rate && videoStream.avg_frame_rate !== "0/0"
+              ? evalFraction(videoStream.avg_frame_rate)
+              : undefined,
+          thumbnailDataUrl: await generateThumbnail(filePath).catch(() => undefined)
+        }
+      : undefined,
+    audio: audioStream
+      ? {
+          sampleRate: audioStream.sample_rate ? Number(audioStream.sample_rate) : undefined,
+          channels: audioStream.channels ? Number(audioStream.channels) : undefined,
+          loudness: audioStream.tags?.REPLAYGAIN_TRACK_GAIN
+            ? Number.parseFloat(audioStream.tags.REPLAYGAIN_TRACK_GAIN)
+            : undefined
+        }
+      : undefined
+  };
+
+  return metadata;
+}
+
+function evalFraction(input: string): number | undefined {
+  const [numerator, denominator] = input.split("/").map(Number);
+  if (!denominator) {
+    return Number.isFinite(numerator) ? numerator : undefined;
+  }
+  return numerator / denominator;
+}
+
+async function generateThumbnail(filePath: string): Promise<string | undefined> {
+  const buffer = await runCommandBuffer("ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    filePath,
+    "-vf",
+    "scale=540:-1",
+    "-frames:v",
+    "1",
+    "-f",
+    "image2pipe",
+    "-"
+  ]).catch(() => null);
+
+  if (!buffer) {
+    return undefined;
+  }
+
+  const base64 = buffer.toString("base64");
+  return `data:image/png;base64,${base64}`;
+}
+
+function runCommand(command: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const chunks: Buffer[] = [];
+    const errors: Buffer[] = [];
+    child.stdout?.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    child.stderr?.on("data", (chunk) => errors.push(Buffer.from(chunk)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks).toString("utf-8"));
+      } else {
+        const message = Buffer.concat(errors).toString("utf-8");
+        reject(new Error(message || `${command} exited with code ${code}`));
+      }
+    });
+  });
+}
+
+function runCommandBuffer(command: string, args: string[]): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const chunks: Buffer[] = [];
+    const errors: Buffer[] = [];
+    child.stdout?.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    child.stderr?.on("data", (chunk) => errors.push(Buffer.from(chunk)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        const message = Buffer.concat(errors).toString("utf-8");
+        reject(new Error(message || `${command} exited with code ${code}`));
+      }
+    });
+  });
 }

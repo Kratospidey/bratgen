@@ -4,6 +4,7 @@ import {
   createRenderJobManifest,
   ensureDownloadUrl,
   getRenderJobManifest,
+  listRenderJobs,
   persistRenderOutput,
   renderOutputPath,
   type RenderJobManifest,
@@ -27,8 +28,22 @@ export interface PublicRenderJob
   error: string | null;
 }
 
+export interface RenderQueueHealth {
+  redis: boolean;
+  worker: {
+    state: string;
+    activeJobId: string | null;
+    failed: number;
+    waiting: number;
+    completed: number;
+  };
+}
+
 interface RenderQueueState {
   enqueue(request: QueueRenderRequest): Promise<RenderJobManifest>;
+  cancel(id: string): Promise<RenderJobManifest | null>;
+  retry(id: string): Promise<RenderJobManifest | null>;
+  stats(): Promise<RenderQueueHealth>;
 }
 
 declare global {
@@ -51,6 +66,10 @@ const defaultJobOptions: JobsOptions = {
 async function processManifest(manifestId: string, reportProgress?: (value: number) => void) {
   const manifest = await getRenderJobManifest(manifestId);
   if (!manifest) {
+    return;
+  }
+
+  if (manifest.status === "cancelled") {
     return;
   }
 
@@ -94,6 +113,7 @@ async function processManifest(manifestId: string, reportProgress?: (value: numb
       fadeMs: manifest.options.fadeMs ?? 250,
       startTime: manifest.segment.start,
       duration: duration > 0 ? duration : undefined,
+      musicAutomation: manifest.options.musicAutomation,
       onProgress: (value) => reportProgress?.(value)
     });
 
@@ -171,6 +191,48 @@ class BullRenderQueue implements RenderQueueState {
     await this.queue.add(manifest.id, { manifestId: manifest.id }, { jobId: manifest.id });
     return manifest;
   }
+
+  async cancel(id: string): Promise<RenderJobManifest | null> {
+    const job = await this.queue.getJob(id);
+    if (job) {
+      try {
+        await job.discard();
+        await job.remove();
+      } catch (error) {
+        console.warn("failed to remove job", id, error);
+      }
+    }
+    return updateRenderJobManifest(id, { status: "cancelled", error: null, progress: 0 });
+  }
+
+  async retry(id: string): Promise<RenderJobManifest | null> {
+    const manifest = await getRenderJobManifest(id);
+    if (!manifest) {
+      return null;
+    }
+    await this.queue.add(manifest.id, { manifestId: manifest.id }, { jobId: manifest.id });
+    return updateRenderJobManifest(id, {
+      status: "queued",
+      progress: 0,
+      error: null
+    });
+  }
+
+  async stats(): Promise<RenderQueueHealth> {
+    const counts = await this.queue.getJobCounts("failed", "waiting", "completed");
+    const active = await this.worker.getActiveJobs(1);
+    const state = await this.worker.getState();
+    return {
+      redis: true,
+      worker: {
+        state,
+        activeJobId: active[0]?.id ?? null,
+        failed: counts.failed ?? 0,
+        waiting: counts.waiting ?? 0,
+        completed: counts.completed ?? 0
+      }
+    } satisfies RenderQueueHealth;
+  }
 }
 
 class InMemoryRenderQueue implements RenderQueueState {
@@ -202,6 +264,34 @@ class InMemoryRenderQueue implements RenderQueueState {
 
     this.processing = false;
   }
+
+  async cancel(id: string) {
+    this.queue = this.queue.filter((job) => job.id !== id);
+    return updateRenderJobManifest(id, { status: "cancelled", error: null, progress: 0 });
+  }
+
+  async retry(id: string) {
+    const manifest = await getRenderJobManifest(id);
+    if (!manifest) {
+      return null;
+    }
+    this.queue.push(manifest);
+    void this.process();
+    return updateRenderJobManifest(id, { status: "queued", error: null, progress: 0 });
+  }
+
+  async stats(): Promise<RenderQueueHealth> {
+    return {
+      redis: false,
+      worker: {
+        state: this.processing ? "processing" : "idle",
+        activeJobId: null,
+        failed: 0,
+        waiting: this.queue.length,
+        completed: 0
+      }
+    };
+  }
 }
 
 function createQueue(): RenderQueueState {
@@ -220,6 +310,21 @@ function createQueue(): RenderQueueState {
 export async function enqueueRenderJob(request: QueueRenderRequest) {
   const controller = (globalThis.__brat_render_queue ??= createQueue());
   return controller.enqueue(request);
+}
+
+export async function cancelRenderJob(id: string) {
+  const controller = (globalThis.__brat_render_queue ??= createQueue());
+  return controller.cancel(id);
+}
+
+export async function retryRenderJob(id: string) {
+  const controller = (globalThis.__brat_render_queue ??= createQueue());
+  return controller.retry(id);
+}
+
+export async function getRenderQueueHealth() {
+  const controller = (globalThis.__brat_render_queue ??= createQueue());
+  return controller.stats();
 }
 
 export async function getRenderJob(id: string): Promise<PublicRenderJob | null> {
@@ -251,4 +356,11 @@ export async function getRenderJob(id: string): Promise<PublicRenderJob | null> 
     attempts: manifest.attempts,
     progress: manifest.progress ?? 0
   } as PublicRenderJob;
+}
+
+export async function listPublicRenderJobs(): Promise<PublicRenderJob[]> {
+  const jobs = await listRenderJobs();
+  return Promise.all(jobs.map((job) => getRenderJob(job.id))).then((results) =>
+    results.filter((job): job is PublicRenderJob => Boolean(job))
+  );
 }

@@ -4,19 +4,55 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@bratgen/ui";
 
+export interface LyricStyleConfig {
+  fontSize: number;
+  lineHeight: number;
+  uppercase: boolean;
+  outlineWidth: number;
+  letterSpacing: number;
+  jitter: number;
+  colorMode: "auto" | "light" | "dark";
+  weight: "semibold" | "bold" | "extrabold";
+  wordReveal: "fade" | "slide";
+  shadowIntensity: number;
+}
+
+export const defaultLyricStyle: LyricStyleConfig = {
+  fontSize: 3.2,
+  lineHeight: 0.92,
+  uppercase: false,
+  outlineWidth: 1.6,
+  letterSpacing: -0.04,
+  jitter: 1.6,
+  colorMode: "auto",
+  weight: "bold",
+  wordReveal: "fade",
+  shadowIntensity: 0.7
+};
+
 interface PlayerCanvasProps {
   videoUrl?: string;
   lyrics?: Array<{ text: string; start: number; end: number }>;
+  words?: Array<{ text: string; start: number; end: number }>;
   beats?: number[];
   autoContrast?: boolean;
+  style?: Partial<LyricStyleConfig>;
 }
 
-export function PlayerCanvas({ videoUrl, lyrics = [], beats = [], autoContrast = true }: PlayerCanvasProps) {
+export function PlayerCanvas({
+  videoUrl,
+  lyrics = [],
+  words = [],
+  beats = [],
+  autoContrast = true,
+  style
+}: PlayerCanvasProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
   const [isBright, setIsBright] = useState(false);
   const [now, setNow] = useState(0);
+  const lyricStyle = useMemo(() => ({ ...defaultLyricStyle, ...(style ?? {}) }), [style]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -80,6 +116,13 @@ export function PlayerCanvas({ videoUrl, lyrics = [], beats = [], autoContrast =
     return lyrics.slice(Math.max(currentLineIndex, 0), currentLineIndex + 3);
   }, [currentLineIndex, lyrics]);
 
+  const activeWords = useMemo(() => {
+    if (!activeLyric) {
+      return [] as typeof words;
+    }
+    return words.filter((word) => word.start >= activeLyric.start - 0.05 && word.end <= activeLyric.end + 0.05);
+  }, [words, activeLyric]);
+
   const beatPositions = useMemo(() => {
     if (!beats.length || !videoRef.current?.duration) {
       return [] as number[];
@@ -88,6 +131,39 @@ export function PlayerCanvas({ videoUrl, lyrics = [], beats = [], autoContrast =
       .filter((beat) => beat >= now && beat <= now + 4)
       .map((beat) => ((beat - now) / 4) * 100);
   }, [beats, now]);
+
+  const fontWeightClass = useMemo(() => {
+    switch (lyricStyle.weight) {
+      case "semibold":
+        return "font-semibold";
+      case "extrabold":
+        return "font-extrabold";
+      default:
+        return "font-bold";
+    }
+  }, [lyricStyle.weight]);
+
+  const textColorClass = useMemo(() => {
+    if (lyricStyle.colorMode === "light") {
+      return "text-white";
+    }
+    if (lyricStyle.colorMode === "dark") {
+      return "text-black";
+    }
+    return isBright ? "text-black" : "text-white";
+  }, [isBright, lyricStyle.colorMode]);
+
+  const shadowColor = useMemo(() => {
+    if (lyricStyle.colorMode === "light") {
+      return `0 0 ${lyricStyle.outlineWidth * 2}px rgba(0,0,0,${lyricStyle.shadowIntensity})`;
+    }
+    if (lyricStyle.colorMode === "dark") {
+      return `0 0 ${lyricStyle.outlineWidth * 2}px rgba(255,255,255,${lyricStyle.shadowIntensity})`;
+    }
+    return isBright
+      ? `0 0 ${lyricStyle.outlineWidth * 2}px rgba(0,0,0,${lyricStyle.shadowIntensity})`
+      : `0 0 ${lyricStyle.outlineWidth * 2}px rgba(255,255,255,${lyricStyle.shadowIntensity})`;
+  }, [isBright, lyricStyle.outlineWidth, lyricStyle.shadowIntensity, lyricStyle.colorMode]);
 
   return (
     <Card className="relative aspect-[9/16] w-full overflow-hidden bg-zinc-900">
@@ -100,24 +176,57 @@ export function PlayerCanvas({ videoUrl, lyrics = [], beats = [], autoContrast =
       <div className="pointer-events-none absolute inset-x-0 bottom-16 flex flex-col items-center space-y-2 px-6 text-center">
         <AnimatePresence mode="popLayout">
           {activeLyric && (
-            <motion.span
+            <motion.div
               key={activeLyric.start}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-              className={`text-4xl font-semibold lowercase tracking-tight ${
-                autoContrast ? (isBright ? "text-black drop-shadow-[0_0_20px_rgba(255,255,255,0.9)]" : "text-white") : "text-brat"
-              }`}
+              transition={{ duration: 0.25 }}
+              style={{
+                fontSize: `${lyricStyle.fontSize}rem`,
+                lineHeight: lyricStyle.lineHeight,
+                letterSpacing: `${lyricStyle.letterSpacing}em`,
+                textTransform: lyricStyle.uppercase ? "uppercase" : "none",
+                textShadow: shadowColor
+              }}
+              className={`flex flex-wrap justify-center gap-x-2 gap-y-1 ${fontWeightClass} ${textColorClass}`}
             >
-              {activeLyric.text}
-            </motion.span>
+              {(activeWords.length ? activeWords : [{ ...activeLyric, confidence: 1 }]).map((word, index) => {
+                const active = now >= word.start && now <= word.end;
+                const jitterX = lyricStyle.jitter ? Math.sin(now * 2 + index) * lyricStyle.jitter : 0;
+                const jitterY = lyricStyle.jitter ? Math.cos(now * 1.6 + index) * lyricStyle.jitter : 0;
+                const displayText = lyricStyle.uppercase ? word.text.toUpperCase() : word.text;
+                return (
+                  <motion.span
+                    key={`${word.text}-${index}-${activeLyric.start}`}
+                    initial={{ opacity: 0, y: lyricStyle.wordReveal === "slide" ? 16 : 0 }}
+                    animate={{
+                      opacity: active ? 1 : 0.35,
+                      y: active ? jitterY : 0,
+                      x: active ? jitterX : 0,
+                      scale: active ? 1.04 : 0.98
+                    }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className="inline-block"
+                  >
+                    {displayText}
+                  </motion.span>
+                );
+              })}
+            </motion.div>
           )}
         </AnimatePresence>
         <div className="flex gap-4 text-sm text-white/60">
           {upcoming.slice(1).map((line) => (
-            <span key={line.start} className="max-w-[12rem] truncate uppercase tracking-[0.3em]">
-              {line.text}
+            <span
+              key={line.start}
+              className="max-w-[12rem] truncate"
+              style={{
+                textTransform: lyricStyle.uppercase ? "uppercase" : "none",
+                letterSpacing: `${Math.max(lyricStyle.letterSpacing, 0)}em`
+              }}
+            >
+              {lyricStyle.uppercase ? line.text.toUpperCase() : line.text}
             </span>
           ))}
         </div>

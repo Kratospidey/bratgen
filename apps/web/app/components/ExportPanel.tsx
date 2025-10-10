@@ -56,6 +56,8 @@ export function ExportPanel({
         return "render complete";
       case "failed":
         return job.error ?? "render failed";
+      case "cancelled":
+        return "render cancelled";
       default:
         return null;
     }

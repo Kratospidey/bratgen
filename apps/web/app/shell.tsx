@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { UploadPane } from "@/components/UploadPane";
 import { SpotifyLinkForm } from "@/components/SpotifyLinkForm";
-import { PlayerCanvas } from "@/components/PlayerCanvas";
+import { PlayerCanvas, defaultLyricStyle, type LyricStyleConfig } from "@/components/PlayerCanvas";
 import { LyricEditor } from "@/components/LyricEditor";
 import { SegmentPicker } from "@/components/SegmentPicker";
 import { AudioControls, type AudioMixConfig } from "@/components/AudioControls";
@@ -14,12 +14,23 @@ import type {
   RenderJob,
   SpotifyMetadataResponse,
   AudioAnalysisResponse,
-  LyricAlignmentResponse
+  LyricAlignmentResponse,
+  RenderQueueSnapshot
 } from "@/lib/api";
 import { Button, Card } from "@bratgen/ui";
 import type { StoredUploadSummary } from "@/lib/uploads";
-import { analyzeAudio, alignLyrics, fetchRenderJob, queueRenderJob } from "@/lib/api";
+import {
+  analyzeAudio,
+  alignLyrics,
+  fetchRenderJob,
+  queueRenderJob,
+  fetchRenderQueue,
+  cancelRenderJobRequest,
+  retryRenderJobRequest
+} from "@/lib/api";
 import type { ExportOptions } from "@/components/ExportPanel";
+import { LyricStylePanel } from "@/components/LyricStylePanel";
+import { RenderQueuePanel } from "@/components/RenderQueuePanel";
 
 export function LandingShell() {
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
@@ -41,10 +52,14 @@ export function LandingShell() {
     includeOriginal: false,
     musicGain: 0,
     ducking: 8,
-    fadeMs: 400
+    fadeMs: 400,
+    automationDepth: 2
   });
   const [alignment, setAlignment] = useState<LyricAlignmentResponse | null>(null);
   const [aligningLyrics, setAligningLyrics] = useState(false);
+  const [lyricStyle, setLyricStyle] = useState<LyricStyleConfig>(defaultLyricStyle);
+  const [queueSnapshot, setQueueSnapshot] = useState<RenderQueueSnapshot>({ jobs: [], health: null });
+  const [queueRefreshing, setQueueRefreshing] = useState(false);
 
   const onUpload = async (data: UploadFormInput) => {
     if (!data.video) {
@@ -165,6 +180,26 @@ export function LandingShell() {
     };
   }, [renderJob]);
 
+  const refreshQueue = useCallback(async () => {
+    try {
+      setQueueRefreshing(true);
+      const snapshot = await fetchRenderQueue();
+      setQueueSnapshot(snapshot);
+    } catch (error) {
+      console.error("failed to fetch queue", error);
+    } finally {
+      setQueueRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshQueue();
+    const interval = setInterval(() => {
+      void refreshQueue();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refreshQueue]);
+
   const onExport = async (options: ExportOptions) => {
     if (!upload) {
       setRenderError("upload a clip before exporting");
@@ -178,6 +213,42 @@ export function LandingShell() {
     setRenderError(null);
     setIsQueueingRender(true);
     try {
+      const automation = (() => {
+        if (!analysis?.beats?.length || mixConfig.automationDepth <= 0) {
+          return [] as Array<{ at: number; gainDb: number }>;
+        }
+        const start = segment.start;
+        const end = segment.end;
+        const baseGain = mixConfig.musicGain;
+        const depth = mixConfig.automationDepth;
+        const duration = Math.max(end - start, 0);
+        const beats = analysis.beats
+          .filter((beat) => beat >= start && beat <= end)
+          .map((beat) => beat - start);
+        if (!beats.length) {
+          return [] as Array<{ at: number; gainDb: number }>;
+        }
+        const points: Array<{ at: number; gainDb: number }> = [{ at: 0, gainDb: baseGain }];
+        for (const beat of beats) {
+          const lead = Math.max(0, beat - 0.12);
+          const trail = Math.min(duration, beat + 0.12);
+          points.push({ at: lead, gainDb: baseGain - depth / 2 });
+          points.push({ at: beat, gainDb: baseGain + depth });
+          points.push({ at: trail, gainDb: baseGain - depth / 3 });
+        }
+        points.push({ at: duration, gainDb: baseGain });
+        const sorted = points
+          .sort((a, b) => a.at - b.at)
+          .map((point, index, arr) => {
+            const prev = arr[index - 1];
+            if (prev && Math.abs(prev.at - point.at) < 0.02) {
+              return { at: point.at, gainDb: (prev.gainDb + point.gainDb) / 2 };
+            }
+            return point;
+          });
+        return sorted;
+      })();
+
       const currentMix = {
         ...mixConfig,
         includeMusic: options.includeMusic,
@@ -194,10 +265,12 @@ export function LandingShell() {
           includeOriginal: currentMix.includeOriginal,
           musicGainDb: currentMix.musicGain,
           duckingDb: currentMix.ducking,
-          fadeMs: currentMix.fadeMs
+          fadeMs: currentMix.fadeMs,
+          musicAutomation: automation.length ? automation : undefined
         }
       });
       setRenderJob(job);
+      void refreshQueue();
     } catch (error) {
       console.error("failed to queue render", error);
       setRenderError(error instanceof Error ? error.message : "failed to queue render");
@@ -205,6 +278,30 @@ export function LandingShell() {
       setIsQueueingRender(false);
     }
   };
+
+  const handleCancelJob = useCallback(
+    async (id: string) => {
+      try {
+        await cancelRenderJobRequest(id);
+        void refreshQueue();
+      } catch (error) {
+        console.error("cancel render failed", error);
+      }
+    },
+    [refreshQueue]
+  );
+
+  const handleRetryJob = useCallback(
+    async (id: string) => {
+      try {
+        await retryRenderJobRequest(id);
+        void refreshQueue();
+      } catch (error) {
+        console.error("retry render failed", error);
+      }
+    },
+    [refreshQueue]
+  );
 
   const lyricLines = useMemo(() => {
     if (alignment) {
@@ -219,6 +316,21 @@ export function LandingShell() {
         end: (segment?.start ?? 0) + index * 2.5 + 2.5
       }));
   }, [alignment, lyrics, segment?.start]);
+
+  const lyricWords = useMemo(() => {
+    if (alignment?.words?.length) {
+      return alignment.words;
+    }
+    return lyrics
+      .split(" ")
+      .filter(Boolean)
+      .map((text, index) => ({
+        text,
+        start: (segment?.start ?? 0) + index * 0.4,
+        end: (segment?.start ?? 0) + index * 0.4 + 0.35,
+        confidence: 0.4
+      }));
+  }, [alignment?.words, lyrics, segment?.start]);
 
   const renderBusy = isQueueingRender || (renderJob?.status === "queued" || renderJob?.status === "processing");
 
@@ -240,7 +352,14 @@ export function LandingShell() {
   return (
     <div className="grid gap-8 lg:grid-cols-[2fr,1.2fr]">
       <div className="space-y-8">
-        <PlayerCanvas videoUrl={videoUrl} lyrics={lyricLines} beats={analysis?.beats ?? []} autoContrast />
+        <PlayerCanvas
+          videoUrl={videoUrl}
+          lyrics={lyricLines}
+          words={lyricWords}
+          beats={analysis?.beats ?? []}
+          autoContrast
+          style={lyricStyle}
+        />
         <Card className="space-y-4">
           <h2 className="text-xl font-semibold text-white">workflow</h2>
           <ol className="space-y-2 text-sm text-zinc-400">
@@ -269,7 +388,9 @@ export function LandingShell() {
             setAlignment(null);
           }}
           onAlign={handleAlignLyrics}
+          onAlignmentChange={(next) => setAlignment(next)}
         />
+        <LyricStylePanel value={lyricStyle} onChange={(next) => setLyricStyle(next)} />
         <AudioControls analysis={analysis} value={mixConfig} onChange={(config) => setMixConfig(config)} />
         {analysisError && <p className="text-xs text-red-400">{analysisError}</p>}
         <ExportPanel
@@ -280,6 +401,13 @@ export function LandingShell() {
           includeMusic={mixConfig.includeMusic}
           includeOriginal={mixConfig.includeOriginal}
           onMixChange={(value) => setMixConfig((current) => ({ ...current, ...value }))}
+        />
+        <RenderQueuePanel
+          jobs={queueSnapshot.jobs}
+          health={queueSnapshot.health}
+          refreshing={queueRefreshing}
+          onCancel={handleCancelJob}
+          onRetry={handleRetryJob}
         />
       </div>
     </div>

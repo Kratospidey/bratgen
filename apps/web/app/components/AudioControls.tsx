@@ -14,6 +14,7 @@ export interface AudioMixConfig {
   musicGain: number;
   ducking: number;
   fadeMs: number;
+  automationDepth: number;
 }
 
 interface AudioControlsProps {
@@ -27,7 +28,8 @@ const defaultMix: AudioMixConfig = {
   includeOriginal: false,
   musicGain: 0,
   ducking: 8,
-  fadeMs: 400
+  fadeMs: 400,
+  automationDepth: 2
 };
 
 export function AudioControls({ analysis, value, onChange }: AudioControlsProps) {
@@ -147,6 +149,15 @@ export function AudioControls({ analysis, value, onChange }: AudioControlsProps)
         value={config.fadeMs}
         onChange={(value) => update({ fadeMs: value })}
         unit="ms"
+      />
+      <SliderField
+        label="beat accents"
+        min={0}
+        max={8}
+        step={0.5}
+        value={config.automationDepth}
+        onChange={(value) => update({ automationDepth: value })}
+        unit="dB"
       />
     </Card>
   );

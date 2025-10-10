@@ -49,7 +49,7 @@ export interface RenderJob {
   uploadId: string;
   createdAt: string;
   updatedAt: string;
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
   segment: { start: number; end: number };
   options: {
     resolution: RenderResolution;
@@ -59,11 +59,28 @@ export interface RenderJob {
     musicGainDb?: number;
     duckingDb?: number;
     fadeMs?: number;
+    musicAutomation?: Array<{ at: number; gainDb: number }>;
   };
   output: RenderJobOutput | null;
   error: string | null;
   progress: number;
   attempts: number;
+}
+
+export interface RenderQueueHealth {
+  redis: boolean;
+  worker: {
+    state: string;
+    activeJobId: string | null;
+    failed: number;
+    waiting: number;
+    completed: number;
+  };
+}
+
+export interface RenderQueueSnapshot {
+  jobs: RenderJob[];
+  health: RenderQueueHealth | null;
 }
 
 export interface RenderRequestPayload {
@@ -77,6 +94,7 @@ export interface RenderRequestPayload {
     musicGainDb?: number;
     duckingDb?: number;
     fadeMs?: number;
+    musicAutomation?: Array<{ at: number; gainDb: number }>;
   };
 }
 
@@ -103,6 +121,25 @@ export async function queueRenderJob(payload: RenderRequestPayload): Promise<Ren
 
 export async function fetchRenderJob(id: string): Promise<RenderJob> {
   const response = await fetch(`/api/render/${id}`);
+  return handleRenderResponse(response);
+}
+
+export async function fetchRenderQueue(): Promise<RenderQueueSnapshot> {
+  const response = await fetch("/api/render");
+  if (!response.ok) {
+    throw new Error("failed to fetch render queue");
+  }
+  const body = (await response.json()) as { jobs: RenderJob[]; health: RenderQueueHealth | null };
+  return { jobs: body.jobs ?? [], health: body.health ?? null };
+}
+
+export async function cancelRenderJobRequest(id: string): Promise<RenderJob> {
+  const response = await fetch(`/api/render/${id}/cancel`, { method: "POST" });
+  return handleRenderResponse(response);
+}
+
+export async function retryRenderJobRequest(id: string): Promise<RenderJob> {
+  const response = await fetch(`/api/render/${id}/retry`, { method: "POST" });
   return handleRenderResponse(response);
 }
 
@@ -140,10 +177,18 @@ export interface AlignedLyric {
   confidence: number;
 }
 
+export interface AlignedLyricWord {
+  text: string;
+  start: number;
+  end: number;
+  confidence: number;
+}
+
 export interface LyricAlignmentResponse {
   lines: AlignedLyric[];
   duration: number;
   model: "beats" | "whisper";
+  words: AlignedLyricWord[];
 }
 
 export async function alignLyrics(payload: { uploadId: string; lyrics: string }): Promise<LyricAlignmentResponse> {

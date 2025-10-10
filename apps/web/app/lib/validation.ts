@@ -40,7 +40,16 @@ export const renderRequestSchema = z.object({
     includeOriginal: z.boolean(),
     musicGainDb: z.number().min(-24).max(12).optional(),
     duckingDb: z.number().min(0).max(24).optional(),
-    fadeMs: z.number().min(0).max(4000).optional()
+    fadeMs: z.number().min(0).max(4000).optional(),
+    musicAutomation: z
+      .array(
+        z.object({
+          at: z.number().min(0),
+          gainDb: z.number().min(-48).max(24)
+        })
+      )
+      .max(256)
+      .optional()
   })
 });
 

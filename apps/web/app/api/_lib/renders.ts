@@ -16,6 +16,7 @@ export interface RenderJobOptions {
   musicGainDb?: number;
   duckingDb?: number;
   fadeMs?: number;
+  musicAutomation?: Array<{ at: number; gainDb: number }>;
 }
 
 export interface RenderSegment {

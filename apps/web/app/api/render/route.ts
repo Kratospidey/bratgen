@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
-import { enqueueRenderJob, getRenderJob } from "@/app/api/_lib/render-queue";
+import { enqueueRenderJob, getRenderJob, getRenderQueueHealth, listPublicRenderJobs } from "@/app/api/_lib/render-queue";
 import { getUpload } from "@/app/api/_lib/storage";
 import { renderRequestSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
+
+export async function GET() {
+  const [jobs, health] = await Promise.all([listPublicRenderJobs(), getRenderQueueHealth().catch(() => null)]);
+  return NextResponse.json({ jobs, health });
+}
 
 export async function POST(request: Request) {
   try {
