@@ -8,10 +8,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { UploadFormInput, uploadSchema } from "@/lib/validation";
 
 interface UploadPaneProps {
-  onSubmit: (data: UploadFormInput) => void;
+  onSubmit: (data: UploadFormInput) => Promise<void> | void;
+  busy?: boolean;
+  error?: string | null;
+  lastUpload?: { id: string; createdAt: string } | null;
 }
 
-export function UploadPane({ onSubmit }: UploadPaneProps) {
+export function UploadPane({ onSubmit, busy = false, error = null, lastUpload = null }: UploadPaneProps) {
   const [videoName, setVideoName] = useState<string | null>(null);
   const [audioName, setAudioName] = useState<string | null>(null);
 
@@ -72,7 +75,12 @@ export function UploadPane({ onSubmit }: UploadPaneProps) {
 
   return (
     <Card className="space-y-6">
-      <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+      <form
+        className="space-y-6"
+        onSubmit={handleSubmit(async (values) => {
+          await onSubmit(values);
+        })}
+      >
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
             <Label>video upload</Label>
@@ -128,7 +136,15 @@ export function UploadPane({ onSubmit }: UploadPaneProps) {
             />
           </div>
         </div>
-        <Button type="submit" className="w-full">start analysis</Button>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        {lastUpload && (
+          <p className="text-xs text-zinc-500">
+            last upload: <span className="text-brat">{new Date(lastUpload.createdAt).toLocaleTimeString()}</span> · job id {lastUpload.id}
+          </p>
+        )}
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? "uploading…" : "start analysis"}
+        </Button>
       </form>
     </Card>
   );

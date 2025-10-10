@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button, Card, Input, Label } from "@bratgen/ui";
 import { fetchSpotifyMetadata } from "@/lib/api";
+import Image from "next/image";
 
 interface SpotifyLinkFormProps {
   onMetadata: (metadata: Awaited<ReturnType<typeof fetchSpotifyMetadata>>) => void;
@@ -46,11 +47,15 @@ export function SpotifyLinkForm({ onMetadata }: SpotifyLinkFormProps) {
       {mutation.data && (
         <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/40 p-4">
           {mutation.data.albumArt && (
-            <img
-              src={mutation.data.albumArt}
-              alt="album art"
-              className="h-20 w-20 rounded-xl border border-white/10 object-cover"
-            />
+            <div className="relative h-20 w-20 overflow-hidden rounded-xl border border-white/10">
+              <Image
+                src={mutation.data.albumArt}
+                alt="album art"
+                fill
+                sizes="80px"
+                className="object-cover"
+              />
+            </div>
           )}
           <div className="space-y-1">
             <p className="text-lg font-semibold text-white">{mutation.data.title}</p>

@@ -4,7 +4,8 @@
 
 Create a minimal, sleek web app where a user uploads a **video** and attaches a **Spotify track link** The app automatically:
 
-* Finds the **best song segment** to fit the video length (or trims video to song end).
+* Finds the **best song segment** to fit the video length (or trims video to song end) using Spotify Audio Analysis when available.
+* Stores uploads on the server with checksums and job IDs so assets persist across refreshes.
 * **Layers the music** over the video for preview; exports use **user‑uploaded audio** or **no music** (per setting).
 * Overlays **lyrics in brat aesthetics without green blocks** — **transparent** text with **auto black/white** per‑frame contrast.
 * Provides a **Mute Original Clip Audio** toggle.
@@ -22,6 +23,18 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 * **Transparent lyric overlay** with auto black/white text for contrast.
 * **Audio control**: toggle **Mute Original Clip Audio**; optional ducking when user audio is present.
 * Export MP4 (H.264 + AAC) up to **60s**.
+
+**Implementation Status (alpha)**
+
+* ✅ Persistent upload storage with SHA‑256 manifests backed by disk (dev) or S3-compatible object storage (prod).
+* ✅ Spotify metadata route integrates Audio Analysis; `/api/analyze/audio` generates local waveform/beat/chroma data when Spotify is absent.
+* ✅ Client upload + export flows persist uploads, surface server errors, and drive a Redis/BullMQ render queue with resumable manifests.
+* ✅ Server renders mix music/original audio with gain, ducking, fades, and expose downloadable files via `/api/render/:id/file`.
+* ✅ Audio controls show waveform/beat grids and mix automation wired to exports; lyric alignment runs via `/api/lyrics/align` (Whisper optional) with cached transcripts and manual overrides.
+* ✅ Lyric editor supports beat-synced word timelines, manual timing edits, and brat-style presets surfaced via the styling panel + animated preview canvas.
+* ✅ Render queue exposes cancel/retry actions, health metrics, and download history backed by BullMQ (Redis) with graceful local fallback.
+* ✅ Upload persistence captures ffprobe metadata + thumbnails for each asset with Whisper transcripts cached per checksum.
+* 🚧 Remaining polish: multi-user auth, analytics, and end-to-end QA hardening before release.
 
 **Non‑Goals (v1)**
 ---
@@ -123,12 +136,18 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 
 ## 8) API/Route Design (Next.js)
 
-* `POST /api/upload` → asset IDs.
-* `POST /api/analyze/audio` → waveform, beats, chroma, analysis JSON.
-* `POST /api/segment/select` → input: durations + analysis; output: start/end.
-* `POST /api/lyrics/align` → input: text/.lrc + audioId; output: timed lines.
-* `POST /api/render` → input: asset IDs, segment, style, audioMix: `{ useUserMusic: boolean, muteOriginal: boolean }`; output: jobId.
-* `GET /api/render/:jobId` → status + download URL.
+| Route | Method | Status | Notes |
+| --- | --- | --- | --- |
+| `/api/uploads` | `POST` | ✅ | Accepts `FormData` (`video`, optional `audio`, `duration`). Persists to disk with SHA‑256 checksums and returns upload metadata/ID. |
+| `/api/uploads` | `GET` | ✅ | Lists persisted uploads (most recent first) for debugging/admin tooling. |
+| `/api/uploads/:id` | `GET` | ✅ | Returns a single upload record by ID. |
+| `/api/uploads/:id/files/:kind` | `GET` | ✅ | Streams `video` or `audio` asset back to the client; used for previews and future renders. |
+| `/api/spotify/metadata` | `POST` | ✅ | Validates Spotify link, proxies yt‑dlp metadata, enriches with Spotify Audio Analysis (if `SPOTIFY_CLIENT_ID/SECRET` set), and returns segment candidates. |
+| `/api/render` | `POST` | ✅ | Queues a server-side FFmpeg render using stored upload assets and export preferences. |
+| `/api/render/:jobId` | `GET` | ✅ | Returns render job status (queued, processing, completed, failed) plus download URL when ready. |
+| `/api/render/:jobId/file` | `GET` | ✅ | Streams the finished render output once the job succeeds. |
+| `/api/analyze/audio` | `POST` | ✅ | Generates waveform, beat grid, tempo, and fallback segment candidates from stored audio/video. |
+| `/api/lyrics/align` | `POST` | ✅ | Aligns lyrics against stored audio using Whisper (optional) + beat snapping and returns timed lines. |
 
 
 ---
@@ -136,11 +155,37 @@ Create a minimal, sleek web app where a user uploads a **video** and attaches a 
 ## 9) Data Models (simplified)
 
 ```ts
+Upload { id, createdAt, duration, files: { video: AssetRef; audio?: AssetRef } }
 Asset { id, kind: 'video'|'audio'|'lyrics', url, duration, meta }
 Analysis { assetId, duration, bpm, beats: number[], chroma: number[][], rms: number[] }
 TimedLyric { t0: number, t1: number, text: string }
 RenderJob { id, status, params, progress, resultUrl }
 ```
+
+`AssetRef` mirrors the upload manifest structure (`path`, `checksum`, `mimeType`, `size`, `originalName`) and can map to S3 keys
+---
+
+## 10) Remaining Work (tracking)
+
+The following items are not yet implemented and block a full end‑to‑end release:
+
+### Backend & Services
+
+* Harden the BullMQ worker by moving it to a dedicated process with persistence, alerting, and scaling guidance.
+* Wire multi-user auth/session awareness into upload, transcript, and render manifests for tenancy isolation.
+
+### Media Processing
+
+* Add mastering options (loudness normalization, stem balancing) and configurable Whisper model selection.
+
+### Frontend Experience
+
+* Layer in preset management + collaborative editing along with richer typography palettes and animation templates.
+
+### Infrastructure & QA
+
+* Ship end-to-end regression coverage across upload → analyze → align → render, plus deploy/runbook automation for Redis, S3, and Whisper workloads.
+
 
 ---
 
@@ -165,9 +210,9 @@ RenderJob { id, status, params, progress, resultUrl }
 
 ## 12) Security & Privacy
 
-* All uploads via signed URLs; scans for file type/size.
-* Auto‑purge assets after **24 hours** in demo environment.
-* No storage of OAuth tokens server‑side beyond session scope.
+* Dev/staging: uploads written to `storage/uploads` with SHA‑256 manifest; cron/purge task (todo) should sweep after **24 hours**.
+* Prod: switch to signed URLs + object storage (R2/S3) with antivirus scan + lifecycle policy.
+* Spotify client credentials cached in memory only; no long‑term token storage.
 
 ---
 
