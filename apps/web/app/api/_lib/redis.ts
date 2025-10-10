@@ -2,9 +2,9 @@ import IORedis, { type RedisOptions } from "ioredis";
 
 let redis: IORedis | null = null;
 let redisHealthy = false;
+let missingConfigLogged = false;
 
-function createClient() {
-  const url = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+function createClient(url: string) {
   const options: RedisOptions = {
     maxRetriesPerRequest: null
   };
@@ -20,9 +20,19 @@ function createClient() {
 }
 
 export function getRedis(): IORedis | null {
+  const url = process.env.REDIS_URL;
+
+  if (!url) {
+    if (!missingConfigLogged) {
+      console.info("redis disabled: REDIS_URL not configured");
+      missingConfigLogged = true;
+    }
+    return null;
+  }
+
   if (!redis) {
     try {
-      redis = createClient();
+      redis = createClient(url);
     } catch (error) {
       console.warn("failed to initialize redis client", error);
       redis = null;
