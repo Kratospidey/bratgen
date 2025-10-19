@@ -29,6 +29,7 @@ export function RenderQueuePanel({
   }, [jobs]);
 
   const content = (
+    <>
       <div className="flex items-center justify-between">
         <div>
           <Label>render queue</Label>
@@ -50,7 +51,9 @@ export function RenderQueuePanel({
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-white"
           >
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-white/90">{job.id.slice(0, 8)} · {job.status}</p>
+              <p className="text-sm font-semibold text-white/90">
+                {job.id.slice(0, 8)} · {job.status}
+              </p>
               <p className="text-[11px] text-white/50">
                 segment {job.segment.start.toFixed(1)}s → {job.segment.end.toFixed(1)}s · attempts {job.attempts}
               </p>

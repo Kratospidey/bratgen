@@ -71,6 +71,7 @@ export function ExportPanel({
   }, [job]);
 
   const content = (
+    <>
       <div>
         <Label>export</Label>
         <p className="text-xs text-zinc-500">mp4 · h264 + aac 192kbps · max 60s</p>

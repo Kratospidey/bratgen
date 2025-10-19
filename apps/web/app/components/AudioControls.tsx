@@ -81,6 +81,7 @@ export function AudioControls({ analysis, value, onChange, variant = "standalone
   };
 
   const content = (
+    <>
       <div>
         <Label>mix & dynamics</Label>
         <p className="text-xs text-zinc-500">duck chorus under vocal, trim fades, preview waveform + beat grid.</p>
