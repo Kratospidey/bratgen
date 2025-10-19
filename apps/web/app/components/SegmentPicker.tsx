@@ -53,6 +53,7 @@ export function SegmentPicker({
   }, [options]);
 
   const content = (
+    <>
       <div className="flex items-center justify-between">
         <div>
           <Label>segment picker</Label>
