@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Card, Label } from "@bratgen/ui";
+import clsx from "clsx";
 import type { RenderJob, RenderQueueHealth } from "@/lib/api";
 
 interface RenderQueuePanelProps {
@@ -10,15 +11,24 @@ interface RenderQueuePanelProps {
   onCancel?: (id: string) => void;
   onRetry?: (id: string) => void;
   refreshing?: boolean;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
-export function RenderQueuePanel({ jobs, health, onCancel, onRetry, refreshing = false }: RenderQueuePanelProps) {
+export function RenderQueuePanel({
+  jobs,
+  health,
+  onCancel,
+  onRetry,
+  refreshing = false,
+  variant = "standalone",
+  className
+}: RenderQueuePanelProps) {
   const sorted = useMemo(() => {
     return [...jobs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [jobs]);
 
-  return (
-    <Card className="space-y-4">
+  const content = (
       <div className="flex items-center justify-between">
         <div>
           <Label>render queue</Label>
@@ -80,6 +90,21 @@ export function RenderQueuePanel({ jobs, health, onCancel, onRetry, refreshing =
           </div>
         )}
       </div>
-    </Card>
+    </>
   );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <Card className={clsx("space-y-4", className)}>{content}</Card>;
 }

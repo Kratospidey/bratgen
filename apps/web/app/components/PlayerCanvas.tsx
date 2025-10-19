@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@bratgen/ui";
+import clsx from "clsx";
 
 export interface LyricStyleConfig {
   fontSize: number;
@@ -37,6 +38,7 @@ interface PlayerCanvasProps {
   beats?: number[];
   autoContrast?: boolean;
   style?: Partial<LyricStyleConfig>;
+  className?: string;
 }
 
 export function PlayerCanvas({
@@ -45,7 +47,8 @@ export function PlayerCanvas({
   words = [],
   beats = [],
   autoContrast = true,
-  style
+  style,
+  className
 }: PlayerCanvasProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -166,7 +169,7 @@ export function PlayerCanvas({
   }, [isBright, lyricStyle.outlineWidth, lyricStyle.shadowIntensity, lyricStyle.colorMode]);
 
   return (
-    <Card className="relative aspect-[9/16] w-full overflow-hidden bg-zinc-900">
+    <Card className={clsx("relative aspect-[9/16] w-full overflow-hidden bg-zinc-900", className)}>
       {videoUrl ? (
         <video ref={videoRef} src={videoUrl} controls playsInline className="h-full w-full object-cover" />
       ) : (

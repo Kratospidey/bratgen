@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Label } from "@bratgen/ui";
 import type { SegmentSelectionResult } from "@bratgen/analysis";
+import clsx from "clsx";
 
 interface SegmentPickerProps {
   spotify: SegmentSelectionResult[];
   analysis?: SegmentSelectionResult[];
   onSelect?: (segment: SegmentSelectionResult) => void;
+  variant?: "standalone" | "section";
+  className?: string;
+  id?: string;
 }
 
 interface SegmentOption {
@@ -16,7 +20,14 @@ interface SegmentOption {
   source: "spotify" | "analysis";
 }
 
-export function SegmentPicker({ spotify, analysis = [], onSelect }: SegmentPickerProps) {
+export function SegmentPicker({
+  spotify,
+  analysis = [],
+  onSelect,
+  variant = "standalone",
+  className,
+  id
+}: SegmentPickerProps) {
   const options = useMemo(() => {
     const merged: SegmentOption[] = [];
     for (const candidate of spotify) {
@@ -41,8 +52,7 @@ export function SegmentPicker({ spotify, analysis = [], onSelect }: SegmentPicke
     } satisfies Record<"spotify" | "analysis", SegmentOption[]>;
   }, [options]);
 
-  return (
-    <Card className="space-y-4" id="workflow">
+  const content = (
       <div className="flex items-center justify-between">
         <div>
           <Label>segment picker</Label>
@@ -96,6 +106,26 @@ export function SegmentPicker({ spotify, analysis = [], onSelect }: SegmentPicke
         })}
         {options.length === 0 && <p className="text-xs text-zinc-500">analysis pending</p>}
       </div>
+    </>
+  );
+
+  if (variant === "section") {
+    return (
+      <div
+        id={id}
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Card className={clsx("space-y-4", className)} id={id}>
+      {content}
     </Card>
   );
 }

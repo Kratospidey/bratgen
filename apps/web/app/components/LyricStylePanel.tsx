@@ -3,18 +3,21 @@
 import { useMemo } from "react";
 import { Card, Label } from "@bratgen/ui";
 import { Switch } from "@headlessui/react";
+import clsx from "clsx";
 import { defaultLyricStyle, type LyricStyleConfig } from "@/components/PlayerCanvas";
 
 interface LyricStylePanelProps {
   value?: Partial<LyricStyleConfig>;
   onChange?: (next: LyricStyleConfig) => void;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
 const weights: Array<LyricStyleConfig["weight"]> = ["semibold", "bold", "extrabold"];
 const colorModes: Array<LyricStyleConfig["colorMode"]> = ["auto", "light", "dark"];
 const wordReveals: Array<LyricStyleConfig["wordReveal"]> = ["fade", "slide"];
 
-export function LyricStylePanel({ value, onChange }: LyricStylePanelProps) {
+export function LyricStylePanel({ value, onChange, variant = "standalone", className }: LyricStylePanelProps) {
   const merged = useMemo(() => ({ ...defaultLyricStyle, ...(value ?? {}) }), [value]);
 
   const update = (patch: Partial<LyricStyleConfig>) => {
@@ -22,8 +25,8 @@ export function LyricStylePanel({ value, onChange }: LyricStylePanelProps) {
     onChange?.(next);
   };
 
-  return (
-    <Card className="space-y-4">
+  const content = (
+    <>
       <div>
         <Label>lyric styling</Label>
         <p className="text-xs text-zinc-500">brat-style tweaks: outlines, jitter, uppercasing, reveal motion.</p>
@@ -102,8 +105,23 @@ export function LyricStylePanel({ value, onChange }: LyricStylePanelProps) {
         value={merged.colorMode}
         onSelect={(colorMode) => update({ colorMode })}
       />
-    </Card>
+    </>
   );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <Card className={clsx("space-y-4", className)}>{content}</Card>;
 }
 
 function SliderField({

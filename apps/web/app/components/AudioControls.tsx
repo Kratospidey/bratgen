@@ -6,6 +6,7 @@ import { scaleLinear } from "d3-scale";
 import useMeasure from "react-use-measure";
 import { Card, Label } from "@bratgen/ui";
 import { Switch } from "@headlessui/react";
+import clsx from "clsx";
 import type { AudioAnalysisResponse } from "@/lib/api";
 
 export interface AudioMixConfig {
@@ -21,6 +22,8 @@ interface AudioControlsProps {
   analysis?: AudioAnalysisResponse | null;
   value?: AudioMixConfig;
   onChange?: (config: AudioMixConfig) => void;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
 const defaultMix: AudioMixConfig = {
@@ -32,7 +35,7 @@ const defaultMix: AudioMixConfig = {
   automationDepth: 2
 };
 
-export function AudioControls({ analysis, value, onChange }: AudioControlsProps) {
+export function AudioControls({ analysis, value, onChange, variant = "standalone", className }: AudioControlsProps) {
   const [internal, setInternal] = useState<AudioMixConfig>(value ?? defaultMix);
 
   const config = value ?? internal;
@@ -77,8 +80,7 @@ export function AudioControls({ analysis, value, onChange }: AudioControlsProps)
     onChange?.(merged);
   };
 
-  return (
-    <Card className="space-y-4">
+  const content = (
       <div>
         <Label>mix & dynamics</Label>
         <p className="text-xs text-zinc-500">duck chorus under vocal, trim fades, preview waveform + beat grid.</p>
@@ -159,8 +161,23 @@ export function AudioControls({ analysis, value, onChange }: AudioControlsProps)
         onChange={(value) => update({ automationDepth: value })}
         unit="dB"
       />
-    </Card>
+    </>
   );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <Card className={clsx("space-y-4", className)}>{content}</Card>;
 }
 
 interface MixSwitchProps {

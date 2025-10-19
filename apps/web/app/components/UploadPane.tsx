@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { Button, Card, Label } from "@bratgen/ui";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import clsx from "clsx";
 import { UploadFormInput, uploadSchema } from "@/lib/validation";
 
 interface UploadPaneProps {
@@ -12,9 +13,18 @@ interface UploadPaneProps {
   busy?: boolean;
   error?: string | null;
   lastUpload?: { id: string; createdAt: string } | null;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
-export function UploadPane({ onSubmit, busy = false, error = null, lastUpload = null }: UploadPaneProps) {
+export function UploadPane({
+  onSubmit,
+  busy = false,
+  error = null,
+  lastUpload = null,
+  variant = "standalone",
+  className
+}: UploadPaneProps) {
   const [videoName, setVideoName] = useState<string | null>(null);
   const [audioName, setAudioName] = useState<string | null>(null);
 
@@ -73,8 +83,7 @@ export function UploadPane({ onSubmit, busy = false, error = null, lastUpload = 
     }
   });
 
-  return (
-    <Card className="space-y-6">
+  const content = (
       <form
         className="space-y-6"
         onSubmit={handleSubmit(async (values) => {
@@ -146,6 +155,24 @@ export function UploadPane({ onSubmit, busy = false, error = null, lastUpload = 
           {busy ? "uploading…" : "start analysis"}
         </Button>
       </form>
+  );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-6 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Card className={clsx("space-y-6", className)}>
+      {content}
     </Card>
   );
 }
