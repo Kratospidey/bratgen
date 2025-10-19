@@ -8,6 +8,7 @@ import { LyricEditor } from "@/components/LyricEditor";
 import { SegmentPicker } from "@/components/SegmentPicker";
 import { AudioControls, type AudioMixConfig } from "@/components/AudioControls";
 import { ExportPanel } from "@/components/ExportPanel";
+import { ControlSection } from "@/components/ControlSection";
 import { UploadFormInput } from "@/lib/validation";
 import { SegmentSelectionResult, scoreCandidate, selectBestSegment } from "@bratgen/analysis";
 import type {
@@ -349,66 +350,220 @@ export function LandingShell() {
     }
   };
 
+  const lockedDuration = segment ? Math.max(0, segment.end - segment.start) : null;
+  const lyricLineCount = lyricLines.length;
+  const queueFocus =
+    renderJob ??
+    queueSnapshot.jobs.find((job) => job.status === "processing" || job.status === "queued") ??
+    queueSnapshot.jobs[0] ??
+    null;
+
+  const queueStatusLabel = (() => {
+    if (!queueFocus) {
+      return "queue idle";
+    }
+    switch (queueFocus.status) {
+      case "processing":
+        return `rendering ${(queueFocus.progress * 100).toFixed(0)}%`;
+      case "queued":
+        return "queued for render";
+      case "completed":
+        return "render complete";
+      case "failed":
+        return "render failed";
+      case "cancelled":
+        return "render cancelled";
+      default:
+        return queueFocus.status;
+    }
+  })();
+
+  const queueStatusDetail = (() => {
+    if (queueFocus) {
+      if (queueFocus.status === "completed" && queueFocus.output) {
+        return `${Math.max(1, Math.round(queueFocus.output.size / (1024 * 1024)))}mb ready to download`;
+      }
+      if (queueFocus.status === "failed") {
+        return queueFocus.error ?? `job ${queueFocus.id.slice(0, 8)} failed`;
+      }
+      return `job ${queueFocus.id.slice(0, 8)} • attempts ${queueFocus.attempts}`;
+    }
+    if (queueSnapshot.health) {
+      return `pending ${queueSnapshot.health.worker.waiting} • done ${queueSnapshot.health.worker.completed}`;
+    }
+    return "ready for export";
+  })();
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[2fr,1.2fr]">
-      <div className="space-y-8">
-        <PlayerCanvas
-          videoUrl={videoUrl}
-          lyrics={lyricLines}
-          words={lyricWords}
-          beats={analysis?.beats ?? []}
-          autoContrast
-          style={lyricStyle}
-        />
-        <Card className="space-y-4">
-          <h2 className="text-xl font-semibold text-white">workflow</h2>
-          <ol className="space-y-2 text-sm text-zinc-400">
-            <li>1. upload clip + optional audio.</li>
-            <li>2. pull spotify analysis; lock chorus slice.</li>
-            <li>3. tune lyrics + styling.</li>
-            <li>4. set audio mix + export target.</li>
-          </ol>
-          <Button className="w-full">watch demo</Button>
+    <div className="grid gap-12 xl:grid-cols-[1.65fr,1fr]">
+      <div className="space-y-10">
+        <section className="relative overflow-hidden rounded-[42px] border border-white/10 bg-white/[0.05] p-10 shadow-[0_0_110px_rgba(203,255,0,0.08)] backdrop-blur">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(203,255,0,0.18),transparent_55%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.14),transparent_60%)]" />
+          <div className="relative grid gap-10 lg:grid-cols-[minmax(0,420px)_1fr]">
+            <div className="mx-auto w-full max-w-[420px]">
+              <PlayerCanvas
+                videoUrl={videoUrl}
+                lyrics={lyricLines}
+                words={lyricWords}
+                beats={analysis?.beats ?? []}
+                autoContrast
+                style={lyricStyle}
+                className="border border-white/15 bg-black/70 shadow-[0_0_85px_rgba(0,0,0,0.45)]"
+              />
+            </div>
+            <div className="flex flex-col justify-between gap-8">
+              <div className="space-y-4">
+                <p className="text-[11px] uppercase tracking-[0.45em] text-brat/80">live preview</p>
+                <h2 className="text-3xl font-semibold text-white">brat studio playback</h2>
+                <p className="text-sm text-zinc-200">
+                  Tune lyrics, styling, and audio before you lock the render. The canvas updates instantly with every tweak.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[{
+                  label: "segment",
+                  value: lockedDuration ? `${lockedDuration.toFixed(1)}s locked` : "select clip",
+                  detail: segment
+                    ? `${segment.start.toFixed(1)}s → ${segment.end.toFixed(1)}s`
+                    : "choose from spotify or beat suggestions"
+                }, {
+                  label: "lyrics",
+                  value: lyricLineCount ? `${lyricLineCount} lines` : "lyrics pending",
+                  detail: alignment
+                    ? `aligned via ${alignment.model}`
+                    : analysis?.beats?.length
+                      ? `${analysis.beats.length} beat markers ready`
+                      : "paste words & auto-align"
+                }, {
+                  label: "render",
+                  value: queueStatusLabel,
+                  detail: queueStatusDetail
+                }].map(({ label, value, detail }) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-white/10 bg-black/45 p-4 text-sm text-zinc-200 shadow-[0_0_45px_rgba(0,0,0,0.35)]"
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.35em] text-zinc-500">{label}</p>
+                    <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+                    <p className="mt-1 text-xs text-zinc-400">{detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+        <Card className="relative overflow-hidden space-y-6 bg-white/[0.06] p-8">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(203,255,0,0.18),transparent_55%)]" />
+          <div className="relative space-y-6">
+            <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.4em] text-brat/80">workflow</p>
+              <h2 className="text-2xl font-semibold text-white">four steps to brat perfection</h2>
+            </div>
+            <ol className="grid gap-4 text-sm text-zinc-200 sm:grid-cols-2">
+              <li className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3">upload clip + optional stems.</li>
+              <li className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3">pull spotify analysis; lock the chorus.</li>
+              <li className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3">tune lyrics, timing, and brat styling.</li>
+              <li className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3">mix audio, export, download instantly.</li>
+            </ol>
+            <div className="flex flex-wrap gap-3">
+              <Button className="px-6">watch demo</Button>
+              <a
+                href="https://github.com/bbchr/bratgen"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-full border border-white/20 px-6 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-brat/60"
+              >
+                docs
+              </a>
+            </div>
+          </div>
         </Card>
       </div>
-      <div className="space-y-8">
-        <UploadPane onSubmit={onUpload} busy={isUploading} error={uploadError} lastUpload={upload} />
-        <SpotifyLinkForm onMetadata={onSpotifyMetadata} />
-        <SegmentPicker
-          spotify={suggestions}
-          analysis={analysisSuggestions}
-          onSelect={(segment) => setSegment(segment)}
-        />
-        <LyricEditor
-          initialLyrics={lyrics}
-          alignment={alignment}
-          aligning={aligningLyrics}
-          onChange={(value) => {
-            setLyrics(value);
-            setAlignment(null);
-          }}
-          onAlign={handleAlignLyrics}
-          onAlignmentChange={(next) => setAlignment(next)}
-        />
-        <LyricStylePanel value={lyricStyle} onChange={(next) => setLyricStyle(next)} />
-        <AudioControls analysis={analysis} value={mixConfig} onChange={(config) => setMixConfig(config)} />
-        {analysisError && <p className="text-xs text-red-400">{analysisError}</p>}
-        <ExportPanel
-          onExport={onExport}
-          busy={renderBusy}
-          job={renderJob}
-          error={renderError}
-          includeMusic={mixConfig.includeMusic}
-          includeOriginal={mixConfig.includeOriginal}
-          onMixChange={(value) => setMixConfig((current) => ({ ...current, ...value }))}
-        />
-        <RenderQueuePanel
-          jobs={queueSnapshot.jobs}
-          health={queueSnapshot.health}
-          refreshing={queueRefreshing}
-          onCancel={handleCancelJob}
-          onRetry={handleRetryJob}
-        />
+      <div className="space-y-6">
+        <div className="space-y-5 rounded-[36px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_95px_rgba(0,0,0,0.4)] backdrop-blur">
+          <div className="space-y-2">
+            <p className="text-[11px] uppercase tracking-[0.45em] text-brat/80">control center</p>
+            <h2 className="text-2xl font-semibold text-white">craft the edit</h2>
+            <p className="text-sm text-zinc-300">
+              Collapse or expand each stage of the process to keep the options focused while you work.
+            </p>
+          </div>
+          <div className="space-y-4">
+            <ControlSection
+              id="workflow"
+              title="source & analysis"
+              eyebrow="step 01"
+              description="Upload media, pull Spotify data, and audition suggested segments."
+            >
+              <UploadPane
+                variant="section"
+                onSubmit={onUpload}
+                busy={isUploading}
+                error={uploadError}
+                lastUpload={upload}
+              />
+              <SpotifyLinkForm variant="section" onMetadata={onSpotifyMetadata} />
+              <SegmentPicker
+                variant="section"
+                spotify={suggestions}
+                analysis={analysisSuggestions}
+                onSelect={(segment) => setSegment(segment)}
+              />
+            </ControlSection>
+            <ControlSection
+              title="lyrics & visuals"
+              eyebrow="step 02"
+              description="Write, align, and stylize the brat typography to taste."
+            >
+              <LyricEditor
+                variant="section"
+                initialLyrics={lyrics}
+                alignment={alignment}
+                aligning={aligningLyrics}
+                onChange={(value) => {
+                  setLyrics(value);
+                  setAlignment(null);
+                }}
+                onAlign={handleAlignLyrics}
+                onAlignmentChange={(next) => setAlignment(next)}
+              />
+              <LyricStylePanel variant="section" value={lyricStyle} onChange={(next) => setLyricStyle(next)} />
+            </ControlSection>
+            <ControlSection
+              id="export"
+              title="mix & export"
+              eyebrow="step 03"
+              description="Balance stems, queue renders, and monitor the server queue."
+            >
+              <AudioControls
+                variant="section"
+                analysis={analysis}
+                value={mixConfig}
+                onChange={(config) => setMixConfig(config)}
+              />
+              {analysisError && <p className="text-xs text-red-400">{analysisError}</p>}
+              <ExportPanel
+                variant="section"
+                onExport={onExport}
+                busy={renderBusy}
+                job={renderJob}
+                error={renderError}
+                includeMusic={mixConfig.includeMusic}
+                includeOriginal={mixConfig.includeOriginal}
+                onMixChange={(value) => setMixConfig((current) => ({ ...current, ...value }))}
+              />
+              <RenderQueuePanel
+                variant="section"
+                jobs={queueSnapshot.jobs}
+                health={queueSnapshot.health}
+                refreshing={queueRefreshing}
+                onCancel={handleCancelJob}
+                onRetry={handleRetryJob}
+              />
+            </ControlSection>
+          </div>
+        </div>
       </div>
     </div>
   );

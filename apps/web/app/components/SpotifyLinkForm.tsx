@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button, Card, Input, Label } from "@bratgen/ui";
-import { fetchSpotifyMetadata } from "@/lib/api";
 import Image from "next/image";
+import clsx from "clsx";
+import { fetchSpotifyMetadata } from "@/lib/api";
 
 interface SpotifyLinkFormProps {
   onMetadata: (metadata: Awaited<ReturnType<typeof fetchSpotifyMetadata>>) => void;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
-export function SpotifyLinkForm({ onMetadata }: SpotifyLinkFormProps) {
+export function SpotifyLinkForm({ onMetadata, variant = "standalone", className }: SpotifyLinkFormProps) {
   const [url, setUrl] = useState("");
   const mutation = useMutation({
     mutationFn: fetchSpotifyMetadata,
@@ -19,8 +22,8 @@ export function SpotifyLinkForm({ onMetadata }: SpotifyLinkFormProps) {
     }
   });
 
-  return (
-    <Card className="space-y-4">
+  const content = (
+    <>
       <form
         className="space-y-4"
         onSubmit={(event) => {
@@ -66,6 +69,21 @@ export function SpotifyLinkForm({ onMetadata }: SpotifyLinkFormProps) {
           </div>
         </div>
       )}
-    </Card>
+    </>
   );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <Card className={clsx("space-y-4", className)}>{content}</Card>;
 }

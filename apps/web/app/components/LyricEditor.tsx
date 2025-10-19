@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, Label, Button } from "@bratgen/ui";
 import type { LyricAlignmentResponse, AlignedLyric, AlignedLyricWord } from "@/lib/api";
+import clsx from "clsx";
 
 interface LyricEditorProps {
   initialLyrics?: string;
@@ -11,6 +12,8 @@ interface LyricEditorProps {
   onChange?: (lyrics: string) => void;
   onAlign?: () => void;
   onAlignmentChange?: (alignment: LyricAlignmentResponse) => void;
+  variant?: "standalone" | "section";
+  className?: string;
 }
 
 export function LyricEditor({
@@ -19,7 +22,9 @@ export function LyricEditor({
   aligning = false,
   onChange,
   onAlign,
-  onAlignmentChange
+  onAlignmentChange,
+  variant = "standalone",
+  className
 }: LyricEditorProps) {
   const [lyrics, setLyrics] = useState(initialLyrics);
   const [manualLines, setManualLines] = useState<AlignedLyric[]>(alignment?.lines ?? []);
@@ -110,8 +115,8 @@ export function LyricEditor({
     onAlignmentChange?.(alignment);
   }, [alignment, onAlignmentChange]);
 
-  return (
-    <Card className="space-y-4">
+  const content = (
+    <>
       <div className="space-y-2">
         <Label htmlFor="lyrics">lyrics</Label>
         <textarea
@@ -194,8 +199,23 @@ export function LyricEditor({
           ))}
         </div>
       )}
-    </Card>
+    </>
   );
+
+  if (variant === "section") {
+    return (
+      <div
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <Card className={clsx("space-y-4", className)}>{content}</Card>;
 }
 
 function WordTimeline({ words, start, end }: { words: AlignedLyricWord[]; start: number; end: number }) {

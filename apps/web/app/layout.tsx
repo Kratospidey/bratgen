@@ -11,21 +11,38 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gradient-to-b from-black via-zinc-900 to-black text-white">
+      <body className="relative min-h-screen bg-[#050505] text-white">
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 -z-20 bg-[radial-gradient(circle_at_top,rgba(203,255,0,0.14),transparent_60%),radial-gradient(circle_at_bottom,rgba(59,130,246,0.18),transparent_65%)]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 -z-10 opacity-40 [background-image:linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:80px_80px]"
+        />
         <Providers>
           <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-24 pt-12">
-            <header className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold uppercase tracking-tight text-brat">bratgen</h1>
-                <p className="max-w-lg text-sm text-zinc-400">
-                  upload a clip, drop a spotify link, and let us build a brat-style lyric edit in seconds.
+            <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+              <div className="space-y-3">
+                <p className="text-[11px] uppercase tracking-[0.5em] text-brat/80">the brat studio</p>
+                <h1 className="text-4xl font-black uppercase tracking-tight text-white">
+                  brat<span className="text-brat">gen</span>
+                </h1>
+                <p className="max-w-xl text-sm text-zinc-300">
+                  Upload a clip, drop a Spotify link, and let the pipeline cut, align, and style a brat-inspired lyric edit for you.
                 </p>
               </div>
-              <nav className="flex gap-4 text-xs uppercase tracking-widest text-zinc-500">
-                <a href="#workflow" className="hover:text-brat">
+              <nav className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.35em] text-zinc-400">
+                <a
+                  href="#workflow"
+                  className="rounded-full border border-white/15 px-4 py-2 transition hover:border-brat/60 hover:text-white"
+                >
                   workflow
                 </a>
-                <a href="#export" className="hover:text-brat">
+                <a
+                  href="#export"
+                  className="rounded-full border border-white/15 px-4 py-2 transition hover:border-brat/60 hover:text-white"
+                >
                   export
                 </a>
               </nav>

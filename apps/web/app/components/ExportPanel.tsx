@@ -2,6 +2,7 @@
 
 import { Card, Button, Label } from "@bratgen/ui";
 import { useEffect, useMemo, useState } from "react";
+import clsx from "clsx";
 import type { RenderJob } from "@/lib/api";
 
 interface ExportPanelProps {
@@ -12,6 +13,9 @@ interface ExportPanelProps {
   includeMusic?: boolean;
   includeOriginal?: boolean;
   onMixChange?: (value: { includeMusic: boolean; includeOriginal: boolean }) => void;
+  variant?: "standalone" | "section";
+  className?: string;
+  id?: string;
 }
 
 export interface ExportOptions {
@@ -28,7 +32,10 @@ export function ExportPanel({
   error = null,
   includeMusic = true,
   includeOriginal = false,
-  onMixChange
+  onMixChange,
+  variant = "standalone",
+  className,
+  id
 }: ExportPanelProps) {
   const [resolution, setResolution] = useState<ExportOptions["resolution"]>("1080p");
   const [aspect, setAspect] = useState<ExportOptions["aspect"]>("9:16");
@@ -63,8 +70,7 @@ export function ExportPanel({
     }
   }, [job]);
 
-  return (
-    <Card className="space-y-4" id="export">
+  const content = (
       <div>
         <Label>export</Label>
         <p className="text-xs text-zinc-500">mp4 · h264 + aac 192kbps · max 60s</p>
@@ -163,6 +169,26 @@ export function ExportPanel({
           )}
         </div>
       )}
+    </>
+  );
+
+  if (variant === "section") {
+    return (
+      <div
+        id={id}
+        className={clsx(
+          "space-y-4 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_45px_rgba(203,255,0,0.04)]",
+          className
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Card className={clsx("space-y-4", className)} id={id}>
+      {content}
     </Card>
   );
 }
